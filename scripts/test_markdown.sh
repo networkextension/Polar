@@ -59,5 +59,27 @@ echo "== Submit Markdown"
 title="Demo Note $RANDOM"
 content="# 小标题\n\n这是一个测试提交。\n\n- item 1\n- item 2"
 markdown_body="$(printf '{"title":"%s","content":"%s"}' "$(json_escape "$title")" "$(json_escape "$content")")"
-submit_status="$(request POST /api/markdown "$markdown_body" | head -n 1)"
+submit_response="$(request POST /api/markdown "$markdown_body")"
+submit_status="$(printf "%s\n" "$submit_response" | head -n 1)"
+submit_body="$(printf "%s\n" "$submit_response" | sed '1d')"
 echo "submit status: $submit_status"
+
+if [[ "$submit_status" != "201" ]]; then
+  echo "submit body: $submit_body"
+  exit 1
+fi
+
+entry_id="$(printf "%s\n" "$submit_body" | sed -E -n 's/.*"id":[[:space:]]*([0-9]+).*/\1/p')"
+if [[ -z "$entry_id" ]]; then
+  echo "failed to parse entry id"
+  echo "submit body: $submit_body"
+  exit 1
+fi
+
+echo "== List Markdown"
+list_status="$(request GET "/api/markdown?limit=5" | head -n 1)"
+echo "list status: $list_status"
+
+echo "== Read Markdown"
+read_status="$(request GET "/api/markdown/$entry_id" | head -n 1)"
+echo "read status: $read_status"

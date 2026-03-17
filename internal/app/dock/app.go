@@ -89,5 +89,7 @@ func (s *Server) registerRoutes() {
 		api.POST("/logout", s.handleLogout)
 		api.GET("/me", s.AuthMiddleware(), s.handleMe)
 		api.POST("/markdown", s.AuthMiddleware(), s.handleMarkdownSubmit)
+		api.GET("/markdown", s.AuthMiddleware(), s.handleMarkdownList)
+		api.GET("/markdown/:id", s.AuthMiddleware(), s.handleMarkdownRead)
 	}
 }

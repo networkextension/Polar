@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -183,7 +184,8 @@ func (s *Server) handleMarkdownSubmit(c *gin.Context) {
 	}
 
 	safeTitle := sanitizeFilename(req.Title)
-	timestamp := time.Now().Format("20060102_150405")
+	now := time.Now()
+	timestamp := now.Format("20060102_150405")
 	filename := safeTitle + "_" + timestamp + "_" + sanitizeFilename(fmt.Sprintf("%v", userID)) + ".md"
 	path := filepath.Join(s.markdownDir, filename)
 
@@ -197,10 +199,90 @@ func (s *Server) handleMarkdownSubmit(c *gin.Context) {
 		return
 	}
 
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		_ = os.Remove(path)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	entryID, err := s.createMarkdownEntryReturningID(userIDStr, req.Title, path, now)
+	if err != nil {
+		_ = os.Remove(path)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
 		"message":  "保存成功",
+		"id":       entryID,
 		"file":     path,
 		"username": username,
+	})
+}
+
+func (s *Server) handleMarkdownList(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	limit := 0
+	if limitStr := c.Query("limit"); limitStr != "" {
+		parsed, err := strconv.Atoi(limitStr)
+		if err != nil || parsed <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
+			return
+		}
+		limit = parsed
+	}
+
+	entries, err := s.listMarkdownEntries(userIDStr, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"entries": entries,
+	})
+}
+
+func (s *Server) handleMarkdownRead(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	entryID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || entryID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
+		return
+	}
+
+	entry, err := s.getMarkdownEntry(userIDStr, entryID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if entry == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "未找到记录"})
+		return
+	}
+
+	content, err := os.ReadFile(entry.FilePath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "文件不存在"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"entry":   entry,
+		"content": string(content),
 	})
 }
 

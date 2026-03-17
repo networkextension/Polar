@@ -28,6 +28,14 @@ type Session struct {
 	ExpiresAt time.Time
 }
 
+type MarkdownEntry struct {
+	ID         int64     `json:"id"`
+	UserID     string    `json:"user_id"`
+	Title      string    `json:"title"`
+	FilePath   string    `json:"file_path"`
+	UploadedAt time.Time `json:"uploaded_at"`
+}
+
 func openDB(dsn string) (*sql.DB, error) {
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
@@ -54,7 +62,16 @@ CREATE TABLE IF NOT EXISTS sessions (
 	expires_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS markdown_entries (
+	id BIGSERIAL PRIMARY KEY,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	title TEXT NOT NULL,
+	file_path TEXT NOT NULL,
+	uploaded_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_markdown_entries_user_id ON markdown_entries(user_id);
 `
 	if _, err := db.Exec(schema); err != nil {
 		_ = db.Close()
@@ -164,4 +181,80 @@ func (s *Server) createUser(user *User) error {
 		return err
 	}
 	return nil
+}
+
+func (s *Server) createMarkdownEntry(userID, title, filePath string, uploadedAt time.Time) error {
+	_, err := s.db.Exec(
+		`INSERT INTO markdown_entries (user_id, title, file_path, uploaded_at) VALUES ($1, $2, $3, $4)`,
+		userID,
+		title,
+		filePath,
+		uploadedAt,
+	)
+	return err
+}
+
+func (s *Server) createMarkdownEntryReturningID(userID, title, filePath string, uploadedAt time.Time) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO markdown_entries (user_id, title, file_path, uploaded_at) VALUES ($1, $2, $3, $4) RETURNING id`,
+		userID,
+		title,
+		filePath,
+		uploadedAt,
+	).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func (s *Server) listMarkdownEntries(userID string, limit int) ([]MarkdownEntry, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.db.Query(
+		`SELECT id, user_id, title, file_path, uploaded_at
+		FROM markdown_entries
+		WHERE user_id = $1
+		ORDER BY uploaded_at DESC
+		LIMIT $2`,
+		userID,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	entries := make([]MarkdownEntry, 0)
+	for rows.Next() {
+		var entry MarkdownEntry
+		if err := rows.Scan(&entry.ID, &entry.UserID, &entry.Title, &entry.FilePath, &entry.UploadedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+func (s *Server) getMarkdownEntry(userID string, id int64) (*MarkdownEntry, error) {
+	var entry MarkdownEntry
+	err := s.db.QueryRow(
+		`SELECT id, user_id, title, file_path, uploaded_at
+		FROM markdown_entries
+		WHERE user_id = $1 AND id = $2`,
+		userID,
+		id,
+	).Scan(&entry.ID, &entry.UserID, &entry.Title, &entry.FilePath, &entry.UploadedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entry, nil
 }
