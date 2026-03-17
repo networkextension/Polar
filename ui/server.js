@@ -20,6 +20,10 @@ app.get("/dashboard", (req, res) => {
   res.redirect("/dashboard.html");
 });
 
+app.get("/editor", (req, res) => {
+  res.redirect("/editor.html");
+});
+
 app.use(express.static("public"));
 
 function proxyRequest(req, res) {

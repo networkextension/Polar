@@ -80,6 +80,20 @@ button:hover {
   box-shadow: 0 10px 20px rgba(56, 189, 248, 0.3);
 }
 
+.btn-inline {
+  width: auto;
+}
+
+.btn-secondary {
+  background: rgba(148, 163, 184, 0.2);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.btn-secondary:hover {
+  box-shadow: 0 10px 20px rgba(148, 163, 184, 0.2);
+}
+
 .link {
   display: block;
   text-align: center;
@@ -137,6 +151,10 @@ button:hover {
   gap: 16px;
 }
 
+.grid.editor-layout {
+  grid-template-columns: 1fr;
+}
+
 .panel {
   background: rgba(15, 23, 42, 0.6);
   border: 1px solid rgba(148, 163, 184, 0.2);
@@ -169,6 +187,31 @@ button:hover {
   line-height: 1.6;
   color: var(--text);
   font-size: 14px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbar input {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+textarea {
+  width: 100%;
+  min-height: 320px;
+  background: #0b1224;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 12px 14px;
+  font-family: inherit;
+  resize: vertical;
 }
 
 @media (max-width: 860px) {

@@ -13,7 +13,10 @@
           <h1>控制台</h1>
           <p id="welcomeText">正在加载用户信息...</p>
         </div>
-        <button id="logoutBtn" type="button">退出登录</button>
+        <div>
+          <button id="newEntryBtn" class="btn-inline btn-secondary" type="button">新建 Markdown</button>
+          <button id="logoutBtn" class="btn-inline" type="button">退出登录</button>
+        </div>
       </div>
 
       <div class="grid">
@@ -33,6 +36,7 @@
       const entryList = document.getElementById("entryList");
       const entryContent = document.getElementById("entryContent");
       const logoutBtn = document.getElementById("logoutBtn");
+      const newEntryBtn = document.getElementById("newEntryBtn");
 
       async function loadProfile() {
         const res = await fetch("/api/me");
@@ -79,6 +83,10 @@
       logoutBtn.addEventListener("click", async () => {
         await fetch("/api/logout", { method: "POST" });
         window.location.href = "/login.html";
+      });
+
+      newEntryBtn.addEventListener("click", () => {
+        window.location.href = "/editor.html";
       });
 
       loadProfile();
