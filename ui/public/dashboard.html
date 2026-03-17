@@ -23,20 +23,33 @@
         <div class="panel">
           <div class="badge">Markdown 记录</div>
           <ul id="entryList" class="list"></ul>
+          <button id="loadMoreBtn" class="btn-inline btn-secondary" type="button">加载更多</button>
         </div>
         <div class="panel">
           <div class="badge">内容预览</div>
           <div id="entryContent" class="content-box">请选择左侧记录</div>
+          <div class="toolbar" style="margin-top: 12px;">
+            <button id="editBtn" class="btn-inline btn-secondary" type="button">编辑</button>
+            <button id="deleteBtn" class="btn-inline" type="button">删除</button>
+          </div>
         </div>
       </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
       const welcomeText = document.getElementById("welcomeText");
       const entryList = document.getElementById("entryList");
       const entryContent = document.getElementById("entryContent");
       const logoutBtn = document.getElementById("logoutBtn");
       const newEntryBtn = document.getElementById("newEntryBtn");
+      const loadMoreBtn = document.getElementById("loadMoreBtn");
+      const editBtn = document.getElementById("editBtn");
+      const deleteBtn = document.getElementById("deleteBtn");
+
+      let nextOffset = 0;
+      let hasMore = true;
+      let activeEntryId = null;
 
       async function loadProfile() {
         const res = await fetch("/api/me");
@@ -48,26 +61,40 @@
         welcomeText.textContent = `你好，${data.username}`;
       }
 
-      async function loadEntries() {
-        const res = await fetch("/api/markdown?limit=20");
+      async function loadEntries(reset = false) {
+        if (reset) {
+          nextOffset = 0;
+          hasMore = true;
+          entryList.innerHTML = "";
+        }
+
+        if (!hasMore) {
+          return;
+        }
+
+        const res = await fetch(`/api/markdown?limit=10&offset=${nextOffset}`);
         if (!res.ok) {
           entryList.innerHTML = "<li>无法加载记录</li>";
           return;
         }
         const data = await res.json();
-        entryList.innerHTML = "";
-
-        if (!data.entries || data.entries.length === 0) {
+        if (reset && (!data.entries || data.entries.length === 0)) {
           entryList.innerHTML = "<li>暂无记录</li>";
+          hasMore = false;
+          loadMoreBtn.style.display = "none";
           return;
         }
 
-        data.entries.forEach((entry) => {
+        (data.entries || []).forEach((entry) => {
           const li = document.createElement("li");
           li.textContent = `${entry.title} (${new Date(entry.uploaded_at).toLocaleString()})`;
           li.addEventListener("click", () => loadEntry(entry.id));
           entryList.appendChild(li);
         });
+
+        hasMore = Boolean(data.has_more);
+        nextOffset = Number(data.next_offset || 0);
+        loadMoreBtn.style.display = hasMore ? "inline-flex" : "none";
       }
 
       async function loadEntry(id) {
@@ -77,7 +104,9 @@
           return;
         }
         const data = await res.json();
-        entryContent.textContent = data.content || "空内容";
+        activeEntryId = data.entry ? data.entry.id : null;
+        const rawContent = data.content || "空内容";
+        entryContent.innerHTML = window.marked ? window.marked.parse(rawContent) : rawContent;
       }
 
       logoutBtn.addEventListener("click", async () => {
@@ -89,8 +118,34 @@
         window.location.href = "/editor.html";
       });
 
+      loadMoreBtn.addEventListener("click", () => {
+        loadEntries();
+      });
+
+      editBtn.addEventListener("click", () => {
+        if (!activeEntryId) {
+          return;
+        }
+        window.location.href = `/editor.html?id=${activeEntryId}`;
+      });
+
+      deleteBtn.addEventListener("click", async () => {
+        if (!activeEntryId) {
+          return;
+        }
+        if (!confirm("确定要删除该记录吗？")) {
+          return;
+        }
+        const res = await fetch(`/api/markdown/${activeEntryId}`, { method: "DELETE" });
+        if (res.ok) {
+          activeEntryId = null;
+          entryContent.textContent = "请选择左侧记录";
+          loadEntries(true);
+        }
+      });
+
       loadProfile();
-      loadEntries();
+      loadEntries(true);
     </script>
   </body>
 </html>

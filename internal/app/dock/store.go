@@ -209,36 +209,45 @@ func (s *Server) createMarkdownEntryReturningID(userID, title, filePath string, 
 	return id, nil
 }
 
-func (s *Server) listMarkdownEntries(userID string, limit int) ([]MarkdownEntry, error) {
+func (s *Server) listMarkdownEntries(userID string, limit, offset int) ([]MarkdownEntry, bool, error) {
 	if limit <= 0 {
 		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	rows, err := s.db.Query(
 		`SELECT id, user_id, title, file_path, uploaded_at
 		FROM markdown_entries
 		WHERE user_id = $1
 		ORDER BY uploaded_at DESC
-		LIMIT $2`,
+		LIMIT $2 OFFSET $3`,
 		userID,
-		limit,
+		limit+1,
+		offset,
 	)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
 
-	entries := make([]MarkdownEntry, 0)
+	entries := make([]MarkdownEntry, 0, limit+1)
 	for rows.Next() {
 		var entry MarkdownEntry
 		if err := rows.Scan(&entry.ID, &entry.UserID, &entry.Title, &entry.FilePath, &entry.UploadedAt); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		entries = append(entries, entry)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return entries, nil
+	hasMore := false
+	if len(entries) > limit {
+		hasMore = true
+		entries = entries[:limit]
+	}
+	return entries, hasMore, nil
 }
 
 func (s *Server) getMarkdownEntry(userID string, id int64) (*MarkdownEntry, error) {
@@ -257,4 +266,24 @@ func (s *Server) getMarkdownEntry(userID string, id int64) (*MarkdownEntry, erro
 		return nil, err
 	}
 	return &entry, nil
+}
+
+func (s *Server) updateMarkdownEntry(userID string, id int64, title, filePath string) error {
+	_, err := s.db.Exec(
+		`UPDATE markdown_entries SET title = $1, file_path = $2 WHERE user_id = $3 AND id = $4`,
+		title,
+		filePath,
+		userID,
+		id,
+	)
+	return err
+}
+
+func (s *Server) deleteMarkdownEntry(userID string, id int64) error {
+	_, err := s.db.Exec(
+		`DELETE FROM markdown_entries WHERE user_id = $1 AND id = $2`,
+		userID,
+		id,
+	)
+	return err
 }

@@ -35,6 +35,7 @@
       </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
       const alertBox = document.getElementById("alert");
       const titleInput = document.getElementById("titleInput");
@@ -42,6 +43,8 @@
       const preview = document.getElementById("preview");
       const saveBtn = document.getElementById("saveBtn");
       const backBtn = document.getElementById("backBtn");
+      const params = new URLSearchParams(window.location.search);
+      const entryId = params.get("id");
 
       async function ensureLogin() {
         const res = await fetch("/api/me");
@@ -50,8 +53,34 @@
         }
       }
 
+      async function loadEntry() {
+        if (!entryId) {
+          return;
+        }
+        const res = await fetch(`/api/markdown/${entryId}`);
+        if (!res.ok) {
+          alertBox.className = "alert error";
+          alertBox.textContent = "无法加载记录";
+          return;
+        }
+        const data = await res.json();
+        titleInput.value = data.entry ? data.entry.title : "";
+        contentInput.value = data.content || "";
+        renderPreview();
+        document.getElementById("welcomeText").textContent = "编辑记录";
+      }
+
+      function renderPreview() {
+        const raw = contentInput.value.trim();
+        if (!raw) {
+          preview.textContent = "暂无内容";
+          return;
+        }
+        preview.innerHTML = window.marked ? window.marked.parse(raw) : raw;
+      }
+
       contentInput.addEventListener("input", () => {
-        preview.textContent = contentInput.value.trim() || "暂无内容";
+        renderPreview();
       });
 
       saveBtn.addEventListener("click", async () => {
@@ -68,8 +97,10 @@
         }
 
         try {
-          const res = await fetch("/api/markdown", {
-            method: "POST",
+          const targetUrl = entryId ? `/api/markdown/${entryId}` : "/api/markdown";
+          const method = entryId ? "PUT" : "POST";
+          const res = await fetch(targetUrl, {
+            method,
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ title, content }),
           });
@@ -82,10 +113,12 @@
           }
 
           alertBox.className = "alert success";
-          alertBox.textContent = `保存成功（ID: ${data.id}）`;
-          titleInput.value = "";
-          contentInput.value = "";
-          preview.textContent = "暂无内容";
+          alertBox.textContent = entryId ? "更新成功" : `保存成功（ID: ${data.id}）`;
+          if (!entryId) {
+            titleInput.value = "";
+            contentInput.value = "";
+            preview.textContent = "暂无内容";
+          }
         } catch (err) {
           alertBox.className = "alert error";
           alertBox.textContent = "网络错误，请稍后重试";
@@ -97,6 +130,7 @@
       });
 
       ensureLogin();
+      loadEntry();
     </script>
   </body>
 </html>
