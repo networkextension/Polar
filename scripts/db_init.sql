@@ -1,0 +1,8 @@
+apple=# CREATE DATABASE gin_auth;
+CREATE DATABASE
+apple=# CREATE USER gin_tester WITH PASSWORD 'test123456';
+CREATE ROLE
+apple=# GRANT ALL PRIVILEGES ON DATABASE gin_auth TO gin_tester;
+GRANT
+apple=# ALTER DATABASE gin_auth OWNER TO gin_tester;
+ALTER DATABASE
