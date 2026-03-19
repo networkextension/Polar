@@ -25,6 +25,7 @@ type Server struct {
 	addr            string
 	redisPrefix     string
 	markdownDir     string
+	uploadDir       string
 	geoLiteDBPath   string
 	geoIPReader     *geoip2.Reader
 	webAuthn        *webauthn.WebAuthn
@@ -47,6 +48,7 @@ func NewServer(cfg Config) (*Server, error) {
 		addr:          cfg.Addr,
 		redisPrefix:   cfg.RedisPrefix,
 		markdownDir:   cfg.MarkdownDir,
+		uploadDir:     cfg.UploadDir,
 		geoLiteDBPath: cfg.GeoLiteDBPath,
 		redis: redis.NewClient(&redis.Options{
 			Addr:     cfg.RedisAddr,
@@ -104,6 +106,9 @@ func NewServer(cfg Config) (*Server, error) {
 
 	server.router = gin.Default()
 	server.router.Use(corsMiddleware())
+	if server.uploadDir != "" {
+		server.router.Static("/uploads", server.uploadDir)
+	}
 	server.registerRoutes()
 
 	return server, nil
@@ -188,5 +193,11 @@ func (s *Server) registerRoutes() {
 		api.POST("/tags", s.AuthMiddleware(), s.AdminMiddleware(), s.handleTagCreate)
 		api.PUT("/tags/:id", s.AuthMiddleware(), s.AdminMiddleware(), s.handleTagUpdate)
 		api.DELETE("/tags/:id", s.AuthMiddleware(), s.AdminMiddleware(), s.handleTagDelete)
+		api.POST("/posts", s.AuthMiddleware(), s.handlePostCreate)
+		api.GET("/posts", s.AuthMiddleware(), s.handlePostList)
+		api.POST("/posts/:id/like", s.AuthMiddleware(), s.handlePostLike)
+		api.DELETE("/posts/:id/like", s.AuthMiddleware(), s.handlePostUnlike)
+		api.POST("/posts/:id/replies", s.AuthMiddleware(), s.handleReplyCreate)
+		api.GET("/posts/:id/replies", s.AuthMiddleware(), s.handleReplyList)
 	}
 }

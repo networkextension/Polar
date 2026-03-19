@@ -26,6 +26,7 @@ func main() {
 		RedisDB:       redisDB,
 		RedisPrefix:   envOrDefault("REDIS_PREFIX", dock.DefaultRedisPrefix),
 		MarkdownDir:   envOrDefault("MARKDOWN_DIR", dock.DefaultMarkdownDir),
+		UploadDir:     envOrDefault("UPLOAD_DIR", dock.DefaultUploadDir),
 		GeoLiteDBPath: envOrDefault("GEOLITE_DB_PATH", dock.DefaultGeoLiteDBPath),
 		PasskeyRPID:   envOrDefault("PASSKEY_RP_ID", dock.DefaultPasskeyRPID),
 		PasskeyOrigin: envOrDefault("PASSKEY_ORIGIN", dock.DefaultPasskeyOrigin),

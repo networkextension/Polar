@@ -407,6 +407,122 @@ button:hover {
   min-height: 80px;
 }
 
+.posts-page {
+  width: min(100%, 1100px);
+}
+
+.post-form-panel {
+  margin-bottom: 18px;
+}
+
+.post-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.post-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.post-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.post-card {
+  display: grid;
+  gap: 12px;
+}
+
+.post-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.post-author {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.post-content {
+  font-size: 14px;
+  color: var(--text);
+  white-space: pre-wrap;
+  line-height: 1.6;
+}
+
+.post-images {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.post-images img {
+  width: 100%;
+  border-radius: 10px;
+  object-fit: cover;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--border);
+}
+
+.post-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.reply-box {
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+  display: none;
+  gap: 10px;
+}
+
+.reply-box.open {
+  display: grid;
+}
+
+.reply-list {
+  display: grid;
+  gap: 8px;
+}
+
+.reply-item {
+  background: var(--surface-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.reply-meta {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.reply-content {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.reply-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.reply-empty,
+.post-empty {
+  color: var(--muted);
+  font-size: 13px;
+  padding: 12px 0;
+}
+
 .list {
   list-style: none;
   padding: 0;

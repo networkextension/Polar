@@ -61,6 +61,28 @@ type Tag struct {
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
+type Post struct {
+	ID         int64     `json:"id"`
+	UserID     string    `json:"user_id"`
+	Username   string    `json:"username"`
+	TagID      *int64    `json:"tag_id,omitempty"`
+	Content    string    `json:"content"`
+	CreatedAt  time.Time `json:"created_at"`
+	LikeCount  int       `json:"like_count"`
+	ReplyCount int       `json:"reply_count"`
+	LikedByMe  bool      `json:"liked_by_me"`
+	Images     []string  `json:"images"`
+}
+
+type PostReply struct {
+	ID        int64     `json:"id"`
+	PostID    int64     `json:"post_id"`
+	UserID    string    `json:"user_id"`
+	Username  string    `json:"username"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 func openDB(dsn string) (*sql.DB, error) {
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
@@ -121,10 +143,44 @@ CREATE TABLE IF NOT EXISTS tags (
 	updated_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS posts (
+	id BIGSERIAL PRIMARY KEY,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	tag_id BIGINT REFERENCES tags(id) ON DELETE SET NULL,
+	content TEXT NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS post_images (
+	id BIGSERIAL PRIMARY KEY,
+	post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+	file_url TEXT NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS post_likes (
+	post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	created_at TIMESTAMPTZ NOT NULL,
+	PRIMARY KEY (post_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS post_replies (
+	id BIGSERIAL PRIMARY KEY,
+	post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	content TEXT NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_markdown_entries_user_id ON markdown_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user_id ON webauthn_credentials(user_id);
 CREATE INDEX IF NOT EXISTS idx_login_records_user_id_logged_in_at ON login_records(user_id, logged_in_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tags_sort_order_created_at ON tags(sort_order DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_post_images_post_id ON post_images(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_likes_post_id ON post_likes(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_replies_post_id ON post_replies(post_id);
 `
 	if _, err := db.Exec(schema); err != nil {
 		_ = db.Close()
@@ -510,4 +566,224 @@ func (s *Server) updateTag(id int64, name, slug, description string, sortOrder i
 func (s *Server) deleteTag(id int64) error {
 	_, err := s.db.Exec(`DELETE FROM tags WHERE id = $1`, id)
 	return err
+}
+
+func (s *Server) createPost(userID string, tagID *int64, content string, createdAt time.Time) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO posts (user_id, tag_id, content, created_at)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING id`,
+		userID,
+		tagID,
+		content,
+		createdAt,
+	).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func (s *Server) deletePost(postID int64) error {
+	_, err := s.db.Exec(`DELETE FROM posts WHERE id = $1`, postID)
+	return err
+}
+
+func (s *Server) addPostImage(postID int64, fileURL string, createdAt time.Time) error {
+	_, err := s.db.Exec(
+		`INSERT INTO post_images (post_id, file_url, created_at)
+		 VALUES ($1, $2, $3)`,
+		postID,
+		fileURL,
+		createdAt,
+	)
+	return err
+}
+
+func (s *Server) listPosts(userID string, limit, offset int) ([]Post, bool, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := s.db.Query(
+		`SELECT p.id, p.user_id, u.username, p.tag_id, p.content, p.created_at,
+		        COALESCE(l.like_count, 0) AS like_count,
+		        COALESCE(r.reply_count, 0) AS reply_count,
+		        (pl.user_id IS NOT NULL) AS liked_by_me
+		   FROM posts p
+		   JOIN users u ON u.id = p.user_id
+		   LEFT JOIN (
+		     SELECT post_id, COUNT(*) AS like_count
+		       FROM post_likes
+		      GROUP BY post_id
+		   ) l ON l.post_id = p.id
+		   LEFT JOIN (
+		     SELECT post_id, COUNT(*) AS reply_count
+		       FROM post_replies
+		      GROUP BY post_id
+		   ) r ON r.post_id = p.id
+		   LEFT JOIN post_likes pl ON pl.post_id = p.id AND pl.user_id = $1
+		  ORDER BY p.created_at DESC
+		  LIMIT $2 OFFSET $3`,
+		userID,
+		limit+1,
+		offset,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	posts := make([]Post, 0, limit+1)
+	postIDs := make([]int64, 0, limit+1)
+	for rows.Next() {
+		var post Post
+		if err := rows.Scan(
+			&post.ID,
+			&post.UserID,
+			&post.Username,
+			&post.TagID,
+			&post.Content,
+			&post.CreatedAt,
+			&post.LikeCount,
+			&post.ReplyCount,
+			&post.LikedByMe,
+		); err != nil {
+			return nil, false, err
+		}
+		posts = append(posts, post)
+		postIDs = append(postIDs, post.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+
+	hasMore := false
+	if len(posts) > limit {
+		hasMore = true
+		posts = posts[:limit]
+		postIDs = postIDs[:limit]
+	}
+
+	if len(postIDs) == 0 {
+		return posts, hasMore, nil
+	}
+
+	imageRows, err := s.db.Query(
+		`SELECT post_id, file_url FROM post_images
+		  WHERE post_id = ANY($1)
+		  ORDER BY id ASC`,
+		pq.Array(postIDs),
+	)
+	if err != nil {
+		return posts, hasMore, err
+	}
+	defer imageRows.Close()
+
+	imageMap := make(map[int64][]string, len(postIDs))
+	for imageRows.Next() {
+		var postID int64
+		var fileURL string
+		if err := imageRows.Scan(&postID, &fileURL); err != nil {
+			return posts, hasMore, err
+		}
+		imageMap[postID] = append(imageMap[postID], fileURL)
+	}
+	if err := imageRows.Err(); err != nil {
+		return posts, hasMore, err
+	}
+
+	for i := range posts {
+		posts[i].Images = imageMap[posts[i].ID]
+	}
+
+	return posts, hasMore, nil
+}
+
+func (s *Server) likePost(postID int64, userID string, createdAt time.Time) error {
+	_, err := s.db.Exec(
+		`INSERT INTO post_likes (post_id, user_id, created_at)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (post_id, user_id) DO NOTHING`,
+		postID,
+		userID,
+		createdAt,
+	)
+	return err
+}
+
+func (s *Server) unlikePost(postID int64, userID string) error {
+	_, err := s.db.Exec(`DELETE FROM post_likes WHERE post_id = $1 AND user_id = $2`, postID, userID)
+	return err
+}
+
+func (s *Server) createReply(postID int64, userID, content string, createdAt time.Time) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO post_replies (post_id, user_id, content, created_at)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING id`,
+		postID,
+		userID,
+		content,
+		createdAt,
+	).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func (s *Server) listReplies(postID int64, limit, offset int) ([]PostReply, bool, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := s.db.Query(
+		`SELECT r.id, r.post_id, r.user_id, u.username, r.content, r.created_at
+		   FROM post_replies r
+		   JOIN users u ON u.id = r.user_id
+		  WHERE r.post_id = $1
+		  ORDER BY r.created_at ASC
+		  LIMIT $2 OFFSET $3`,
+		postID,
+		limit+1,
+		offset,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	replies := make([]PostReply, 0, limit+1)
+	for rows.Next() {
+		var reply PostReply
+		if err := rows.Scan(
+			&reply.ID,
+			&reply.PostID,
+			&reply.UserID,
+			&reply.Username,
+			&reply.Content,
+			&reply.CreatedAt,
+		); err != nil {
+			return nil, false, err
+		}
+		replies = append(replies, reply)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+
+	hasMore := false
+	if len(replies) > limit {
+		hasMore = true
+		replies = replies[:limit]
+	}
+
+	return replies, hasMore, nil
 }

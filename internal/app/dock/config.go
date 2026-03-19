@@ -9,6 +9,7 @@ const (
 	DefaultRedisPrefix   = "polar"
 	SessionDuration      = 24 * time.Hour
 	DefaultMarkdownDir   = "data/markdown"
+	DefaultUploadDir     = "data/uploads"
 	DefaultGeoLiteDBPath = "data/GeoLite2-City.mmdb"
 	DefaultAddr          = ":8080"
 	DefaultPostgresDSN   = "postgres://gin_tester:test123456@localhost:5432/gin_auth?sslmode=disable"
@@ -25,6 +26,7 @@ type Config struct {
 	RedisDB       int
 	RedisPrefix   string
 	MarkdownDir   string
+	UploadDir     string
 	GeoLiteDBPath string
 	PasskeyRPID   string
 	PasskeyOrigin string

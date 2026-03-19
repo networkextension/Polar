@@ -52,6 +52,7 @@ function proxyRequest(req, res) {
 }
 
 app.use("/api", proxyRequest);
+app.use("/uploads", proxyRequest);
 
 app.listen(PORT, () => {
   console.log(`UI running on http://localhost:${PORT}`);
