@@ -437,6 +437,12 @@ button:hover {
   gap: 12px;
 }
 
+.post-detail {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
 .post-header {
   display: flex;
   justify-content: space-between;

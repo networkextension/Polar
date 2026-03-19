@@ -703,6 +703,72 @@ func (s *Server) listPosts(userID string, limit, offset int) ([]Post, bool, erro
 	return posts, hasMore, nil
 }
 
+func (s *Server) getPostByID(userID string, postID int64) (*Post, error) {
+	var post Post
+	err := s.db.QueryRow(
+		`SELECT p.id, p.user_id, u.username, p.tag_id, p.content, p.created_at,
+		        COALESCE(l.like_count, 0) AS like_count,
+		        COALESCE(r.reply_count, 0) AS reply_count,
+		        (pl.user_id IS NOT NULL) AS liked_by_me
+		   FROM posts p
+		   JOIN users u ON u.id = p.user_id
+		   LEFT JOIN (
+		     SELECT post_id, COUNT(*) AS like_count
+		       FROM post_likes
+		      GROUP BY post_id
+		   ) l ON l.post_id = p.id
+		   LEFT JOIN (
+		     SELECT post_id, COUNT(*) AS reply_count
+		       FROM post_replies
+		      GROUP BY post_id
+		   ) r ON r.post_id = p.id
+		   LEFT JOIN post_likes pl ON pl.post_id = p.id AND pl.user_id = $1
+		  WHERE p.id = $2`,
+		userID,
+		postID,
+	).Scan(
+		&post.ID,
+		&post.UserID,
+		&post.Username,
+		&post.TagID,
+		&post.Content,
+		&post.CreatedAt,
+		&post.LikeCount,
+		&post.ReplyCount,
+		&post.LikedByMe,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	rows, err := s.db.Query(
+		`SELECT file_url FROM post_images WHERE post_id = $1 ORDER BY id ASC`,
+		postID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var images []string
+	for rows.Next() {
+		var url string
+		if err := rows.Scan(&url); err != nil {
+			return nil, err
+		}
+		images = append(images, url)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	post.Images = images
+
+	return &post, nil
+}
+
 func (s *Server) likePost(postID int64, userID string, createdAt time.Time) error {
 	_, err := s.db.Exec(
 		`INSERT INTO post_likes (post_id, user_id, created_at)

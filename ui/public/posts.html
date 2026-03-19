@@ -15,23 +15,8 @@
         </div>
         <div class="header-actions">
           <a class="btn-inline btn-secondary" href="/dashboard.html">返回控制台</a>
+          <a class="btn-inline btn-secondary" href="/post.html">发帖</a>
         </div>
-      </div>
-
-      <div class="panel post-form-panel">
-        <div class="badge">发布新帖</div>
-        <form id="postForm" class="post-form">
-          <label class="form-label" for="postContent">内容</label>
-          <textarea id="postContent" class="input textarea" rows="4" placeholder="分享你的想法..." required></textarea>
-
-          <label class="form-label" for="postImages">图片（至少 1 张）</label>
-          <input id="postImages" class="input" type="file" accept="image/*" multiple required />
-
-          <div id="postFormStatus" class="status-text"></div>
-          <div class="post-form-actions">
-            <button id="postSubmitBtn" class="btn-secondary" type="submit">发布</button>
-          </div>
-        </form>
       </div>
 
       <div class="posts-list">
@@ -44,11 +29,6 @@
     <script>
       const API_BASE = "http://localhost:8080";
       const postWelcome = document.getElementById("postWelcome");
-      const postForm = document.getElementById("postForm");
-      const postContent = document.getElementById("postContent");
-      const postImages = document.getElementById("postImages");
-      const postFormStatus = document.getElementById("postFormStatus");
-      const postSubmitBtn = document.getElementById("postSubmitBtn");
       const postList = document.getElementById("postList");
       const postLoadMoreBtn = document.getElementById("postLoadMoreBtn");
 
@@ -124,25 +104,11 @@
             <button class="btn-inline btn-secondary like-btn" type="button">
               ${post.liked_by_me ? "已点赞" : "点赞"} · ${post.like_count}
             </button>
-            <button class="btn-inline btn-secondary reply-toggle" type="button">回复</button>
-          </div>
-          <div class="reply-box">
-            <div class="reply-list"></div>
-            <form class="reply-form">
-              <input class="input reply-input" type="text" placeholder="写下你的回复..." required />
-              <button class="btn-inline btn-secondary" type="submit">发送</button>
-            </form>
+            <a class="btn-inline btn-secondary" href="/post.html?id=${post.id}">查看详情</a>
           </div>
         `;
 
         const likeBtn = card.querySelector(".like-btn");
-        const replyToggle = card.querySelector(".reply-toggle");
-        const replyBox = card.querySelector(".reply-box");
-        const replyList = card.querySelector(".reply-list");
-        const replyForm = card.querySelector(".reply-form");
-        const replyInput = card.querySelector(".reply-input");
-
-        let repliesLoaded = false;
 
         likeBtn.addEventListener("click", async () => {
           const method = post.liked_by_me ? "DELETE" : "POST";
@@ -154,29 +120,6 @@
           post.liked_by_me = !post.liked_by_me;
           post.like_count += post.liked_by_me ? 1 : -1;
           likeBtn.textContent = `${post.liked_by_me ? "已点赞" : "点赞"} · ${post.like_count}`;
-        });
-
-        replyToggle.addEventListener("click", async () => {
-          replyBox.classList.toggle("open");
-          if (!repliesLoaded) {
-            repliesLoaded = true;
-            await loadReplies(post.id, replyList);
-          }
-        });
-
-        replyForm.addEventListener("submit", async (event) => {
-          event.preventDefault();
-          const content = replyInput.value.trim();
-          if (!content) return;
-          const res = await fetch(`${API_BASE}/api/posts/${post.id}/replies`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ content }),
-          });
-          if (!res.ok) return;
-          replyInput.value = "";
-          await loadReplies(post.id, replyList);
         });
 
         return card;
@@ -214,48 +157,6 @@
         nextOffset = data.next_offset;
         postLoadMoreBtn.style.display = hasMore ? "inline-flex" : "none";
       }
-
-      postForm.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const content = postContent.value.trim();
-        if (!content) {
-          postFormStatus.textContent = "内容不能为空";
-          return;
-        }
-        if (!postImages.files || postImages.files.length === 0) {
-          postFormStatus.textContent = "至少选择一张图片";
-          return;
-        }
-
-        postFormStatus.textContent = "正在发布...";
-        postSubmitBtn.disabled = true;
-
-        const formData = new FormData();
-        formData.append("content", content);
-        Array.from(postImages.files).forEach((file) => {
-          formData.append("images", file);
-        });
-
-        try {
-          const res = await fetch(`${API_BASE}/api/posts`, {
-            method: "POST",
-            credentials: "include",
-            body: formData,
-          });
-          const data = await res.json();
-          if (!res.ok) {
-            postFormStatus.textContent = data.error || "发布失败";
-            return;
-          }
-          postFormStatus.textContent = "发布成功";
-          postForm.reset();
-          await loadPosts(true);
-        } catch (err) {
-          postFormStatus.textContent = "发布失败，请重试";
-        } finally {
-          postSubmitBtn.disabled = false;
-        }
-      });
 
       postLoadMoreBtn.addEventListener("click", () => loadPosts(false));
 

@@ -195,6 +195,7 @@ func (s *Server) registerRoutes() {
 		api.DELETE("/tags/:id", s.AuthMiddleware(), s.AdminMiddleware(), s.handleTagDelete)
 		api.POST("/posts", s.AuthMiddleware(), s.handlePostCreate)
 		api.GET("/posts", s.AuthMiddleware(), s.handlePostList)
+		api.GET("/posts/:id", s.AuthMiddleware(), s.handlePostRead)
 		api.POST("/posts/:id/like", s.AuthMiddleware(), s.handlePostLike)
 		api.DELETE("/posts/:id/like", s.AuthMiddleware(), s.handlePostUnlike)
 		api.POST("/posts/:id/replies", s.AuthMiddleware(), s.handleReplyCreate)
