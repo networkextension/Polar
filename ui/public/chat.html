@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>私聊</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="chat-page">
+      <div class="dashboard-header">
+        <div>
+          <h1>私聊</h1>
+          <p id="chatWelcome">正在加载...</p>
+        </div>
+        <div class="header-actions">
+          <a class="btn-inline btn-secondary" href="/posts.html">返回帖子广场</a>
+          <a class="btn-inline btn-secondary" href="/dashboard.html">返回控制台</a>
+        </div>
+      </div>
+
+      <div class="chat-layout">
+        <div class="chat-list panel">
+          <div class="badge">会话列表</div>
+          <div id="chatList" class="chat-list-body"></div>
+        </div>
+
+        <div class="chat-thread panel">
+          <div class="chat-thread-header">
+            <div>
+              <div id="chatTitle" class="chat-title">选择一个会话</div>
+              <div id="chatSubtitle" class="chat-subtitle">从左侧选择或从帖子用户名进入</div>
+            </div>
+            <button id="chatRefreshBtn" class="btn-inline btn-secondary" type="button">刷新</button>
+          </div>
+          <div id="messageList" class="message-list"></div>
+          <form id="messageForm" class="message-form">
+            <input id="messageInput" class="input message-input" type="text" placeholder="写点什么..." required />
+            <button class="btn-inline btn-secondary" type="submit">发送</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const API_BASE = "http://localhost:8080";
+      const chatWelcome = document.getElementById("chatWelcome");
+      const chatList = document.getElementById("chatList");
+      const chatTitle = document.getElementById("chatTitle");
+      const chatSubtitle = document.getElementById("chatSubtitle");
+      const messageList = document.getElementById("messageList");
+      const messageForm = document.getElementById("messageForm");
+      const messageInput = document.getElementById("messageInput");
+      const chatRefreshBtn = document.getElementById("chatRefreshBtn");
+
+      let currentUserId = "";
+      let currentUsername = "";
+      let activeThreadId = null;
+      let activeChat = null;
+      let chatCache = [];
+      let pollTimer = null;
+
+      function formatTime(value) {
+        if (!value) return "";
+        return new Date(value).toLocaleString();
+      }
+
+      function getTargetFromQuery() {
+        const params = new URLSearchParams(window.location.search);
+        const userId = params.get("user_id");
+        const username = params.get("username");
+        return { userId, username };
+      }
+
+      async function loadProfile() {
+        const res = await fetch(`${API_BASE}/api/me`, { credentials: "include" });
+        if (!res.ok) {
+          window.location.href = "/login.html";
+          return;
+        }
+        const data = await res.json();
+        currentUserId = data.user_id;
+        currentUsername = data.username;
+        chatWelcome.textContent = `你好，${data.username}，和好友聊两句吧。`;
+      }
+
+      function renderChatList(chats) {
+        chatList.innerHTML = "";
+        if (!chats || chats.length === 0) {
+          chatList.innerHTML = "<div class='chat-empty'>暂无会话</div>";
+          return;
+        }
+
+        chats.forEach((chat) => {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.className = "chat-item";
+          if (activeThreadId === chat.id) {
+            item.classList.add("active");
+          }
+          const unreadBadge = chat.unread_count
+            ? `<span class="unread-badge">${chat.unread_count}</span>`
+            : "";
+          item.innerHTML = `
+            <div class="chat-item-title">${chat.other_username}${unreadBadge}</div>
+            <div class="chat-item-meta">
+              <span>${chat.last_message || "暂无消息"}</span>
+              <span>${chat.last_message_at ? formatTime(chat.last_message_at) : ""}</span>
+            </div>
+          `;
+          item.addEventListener("click", () => openChat(chat));
+          chatList.appendChild(item);
+        });
+      }
+
+      async function loadChats(focusThreadId = null) {
+        const res = await fetch(`${API_BASE}/api/chats?limit=50`, { credentials: "include" });
+        if (!res.ok) {
+          chatList.innerHTML = "<div class='chat-empty'>无法加载会话</div>";
+          return;
+        }
+        const data = await res.json();
+        chatCache = data.chats || [];
+        if (focusThreadId) {
+          const match = chatCache.find((item) => item.id === focusThreadId);
+          if (match) {
+            activeThreadId = match.id;
+            activeChat = match;
+          }
+        }
+        renderChatList(chatCache);
+      }
+
+      async function startChatWithUser(userId) {
+        const res = await fetch(`${API_BASE}/api/chats/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ user_id: userId }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          chatSubtitle.textContent = data.error || "无法创建会话";
+          return null;
+        }
+        const data = await res.json();
+        return data.chat;
+      }
+
+      function renderMessages(messages) {
+        if (!messages || messages.length === 0) {
+          messageList.innerHTML = "<div class='chat-empty'>暂无消息</div>";
+          return;
+        }
+        messageList.innerHTML = messages
+          .map((msg) => {
+            const isMine = msg.sender_id === currentUserId;
+            const content = msg.deleted ? "消息已撤回" : msg.content;
+            const bubbleClass = msg.deleted ? "message-bubble deleted" : "message-bubble";
+            const revokeButton =
+              isMine && !msg.deleted
+                ? `<button class="message-revoke" data-id="${msg.id}" type="button">撤回</button>`
+                : "";
+            return `
+              <div class="message-item ${isMine ? "mine" : "other"}">
+                <div class="message-meta">${msg.sender_username} · ${formatTime(msg.created_at)}</div>
+                <div class="message-row">
+                  <div class="${bubbleClass}">${content}</div>
+                  ${revokeButton}
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+        messageList.querySelectorAll(".message-revoke").forEach((button) => {
+          button.addEventListener("click", async () => {
+            const messageId = button.getAttribute("data-id");
+            if (!messageId) return;
+            await revokeMessage(messageId);
+          });
+        });
+        messageList.scrollTop = messageList.scrollHeight;
+      }
+
+      async function loadMessages(threadId) {
+        messageList.innerHTML = "<div class='chat-empty'>加载中...</div>";
+        const res = await fetch(`${API_BASE}/api/chats/${threadId}/messages?limit=200`, {
+          credentials: "include",
+        });
+        if (!res.ok) {
+          messageList.innerHTML = "<div class='chat-empty'>无法加载消息</div>";
+          return;
+        }
+        const data = await res.json();
+        renderMessages(data.messages || []);
+      }
+
+      function openChat(chat) {
+        activeThreadId = chat.id;
+        activeChat = chat;
+        chatTitle.textContent = chat.other_username;
+        chatSubtitle.textContent = `正在与 ${chat.other_username} 私聊`;
+        messageInput.disabled = false;
+        renderChatList(chatCache);
+        loadMessages(chat.id).then(() => loadChats(chat.id));
+      }
+
+      async function revokeMessage(messageId) {
+        if (!activeThreadId) return;
+        const res = await fetch(`${API_BASE}/api/chats/${activeThreadId}/messages/${messageId}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+        if (!res.ok) {
+          return;
+        }
+        await loadMessages(activeThreadId);
+        await loadChats(activeThreadId);
+      }
+
+      function startPolling() {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+        }
+        pollTimer = setInterval(async () => {
+          await loadChats(activeThreadId);
+          if (activeThreadId) {
+            await loadMessages(activeThreadId);
+          }
+        }, 5000);
+      }
+
+      messageForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!activeThreadId) return;
+        const content = messageInput.value.trim();
+        if (!content) return;
+        const res = await fetch(`${API_BASE}/api/chats/${activeThreadId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ content }),
+        });
+        if (!res.ok) {
+          return;
+        }
+        messageInput.value = "";
+        await loadMessages(activeThreadId);
+        await loadChats(activeThreadId);
+      });
+
+      chatRefreshBtn.addEventListener("click", async () => {
+        await loadChats(activeThreadId);
+        if (activeThreadId) {
+          await loadMessages(activeThreadId);
+        }
+      });
+
+      async function init() {
+        await loadProfile();
+        messageInput.disabled = true;
+        const target = getTargetFromQuery();
+        if (target.userId) {
+          if (target.userId === currentUserId) {
+            chatSubtitle.textContent = "不能和自己聊天";
+            await loadChats();
+            startPolling();
+            return;
+          }
+          const chat = await startChatWithUser(target.userId);
+          await loadChats(chat ? chat.id : null);
+          if (chat) {
+            openChat(chat);
+          }
+          startPolling();
+        } else {
+          await loadChats();
+          startPolling();
+        }
+      }
+
+      init();
+    </script>
+  </body>
+</html>

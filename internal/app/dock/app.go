@@ -200,5 +200,10 @@ func (s *Server) registerRoutes() {
 		api.DELETE("/posts/:id/like", s.AuthMiddleware(), s.handlePostUnlike)
 		api.POST("/posts/:id/replies", s.AuthMiddleware(), s.handleReplyCreate)
 		api.GET("/posts/:id/replies", s.AuthMiddleware(), s.handleReplyList)
+		api.GET("/chats", s.AuthMiddleware(), s.handleChatList)
+		api.POST("/chats/start", s.AuthMiddleware(), s.handleChatStart)
+		api.GET("/chats/:id/messages", s.AuthMiddleware(), s.handleChatMessages)
+		api.POST("/chats/:id/messages", s.AuthMiddleware(), s.handleChatSend)
+		api.DELETE("/chats/:id/messages/:messageId", s.AuthMiddleware(), s.handleChatDelete)
 	}
 }
