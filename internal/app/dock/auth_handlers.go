@@ -117,11 +117,19 @@ func (s *Server) handleMe(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	username, _ := c.Get("username")
 	role, _ := c.Get("role")
+	userIDStr, _ := userID.(string)
+	iconURL := ""
+	if userIDStr != "" {
+		if user, err := s.getUserByID(userIDStr); err == nil && user != nil {
+			iconURL = user.IconURL
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"user_id":  userID,
 		"username": username,
 		"role":     role,
+		"icon_url": iconURL,
 	})
 }
 

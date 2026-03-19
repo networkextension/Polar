@@ -24,6 +24,7 @@ type User struct {
 	Email     string    `json:"email"`
 	Password  string    `json:"-"` // password_hash
 	Role      string    `json:"role"`
+	IconURL   string    `json:"icon_url"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -134,11 +135,14 @@ CREATE TABLE IF NOT EXISTS users (
 	email TEXT NOT NULL UNIQUE,
 	password_hash TEXT NOT NULL,
 	role TEXT NOT NULL DEFAULT 'user',
+	icon_url TEXT NOT NULL DEFAULT '',
 	created_at TIMESTAMPTZ NOT NULL
 );
 
 ALTER TABLE users
 	ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
+ALTER TABLE users
+	ADD COLUMN IF NOT EXISTS icon_url TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS markdown_entries (
 	id BIGSERIAL PRIMARY KEY,
@@ -337,9 +341,9 @@ func checkPassword(password, hash string) bool {
 func (s *Server) getUserByEmail(email string) (*User, error) {
 	var user User
 	err := s.db.QueryRow(
-		`SELECT id, username, email, password_hash, role, created_at FROM users WHERE email = $1`,
+		`SELECT id, username, email, password_hash, role, icon_url, created_at FROM users WHERE email = $1`,
 		email,
-	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.Role, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.Role, &user.IconURL, &user.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -352,9 +356,9 @@ func (s *Server) getUserByEmail(email string) (*User, error) {
 func (s *Server) getUserByID(userID string) (*User, error) {
 	var user User
 	err := s.db.QueryRow(
-		`SELECT id, username, email, password_hash, role, created_at FROM users WHERE id = $1`,
+		`SELECT id, username, email, password_hash, role, icon_url, created_at FROM users WHERE id = $1`,
 		userID,
-	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.Role, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.Role, &user.IconURL, &user.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -368,13 +372,17 @@ func (s *Server) createUser(user *User) error {
 	if user.Role == "" {
 		user.Role = "user"
 	}
+	if user.IconURL == "" {
+		user.IconURL = ""
+	}
 	_, err := s.db.Exec(
-		`INSERT INTO users (id, username, email, password_hash, role, created_at) VALUES ($1, $2, $3, $4, $5, $6)`,
+		`INSERT INTO users (id, username, email, password_hash, role, icon_url, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		user.ID,
 		user.Username,
 		user.Email,
 		user.Password,
 		user.Role,
+		user.IconURL,
 		user.CreatedAt,
 	)
 	if err != nil {
@@ -457,6 +465,15 @@ func (s *Server) upsertWebAuthnCredential(userID string, credential *webauthn.Cr
 		credentialID,
 		userID,
 		payload,
+	)
+	return err
+}
+
+func (s *Server) updateUserIcon(userID, iconURL string) error {
+	_, err := s.db.Exec(
+		`UPDATE users SET icon_url = $1 WHERE id = $2`,
+		iconURL,
+		userID,
 	)
 	return err
 }

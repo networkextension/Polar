@@ -349,6 +349,52 @@ button:hover {
   padding: 16px;
 }
 
+.profile-panel {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(56, 189, 248, 0.2);
+  border: 1px solid var(--border);
+  object-fit: cover;
+}
+
+.profile-meta {
+  flex: 1;
+}
+
+.icon-editor {
+  margin-top: 12px;
+  display: none;
+}
+
+.icon-editor.active {
+  display: block;
+}
+
+.icon-canvas {
+  width: 160px;
+  height: 160px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid var(--border);
+  margin-bottom: 10px;
+  cursor: grab;
+}
+
+.icon-canvas:active {
+  cursor: grabbing;
+}
+
+.range-input {
+  width: 160px;
+}
+
 .modal {
   position: fixed;
   inset: 0;

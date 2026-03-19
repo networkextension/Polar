@@ -186,6 +186,7 @@ func (s *Server) registerRoutes() {
 		api.POST("/passkey/register/finish", s.AuthMiddleware(), s.handlePasskeyRegisterFinish)
 		api.POST("/passkey/login/begin", s.GuestMiddleware(), s.handlePasskeyLoginBegin)
 		api.POST("/passkey/login/finish", s.GuestMiddleware(), s.handlePasskeyLoginFinish)
+		api.POST("/user/icon", s.AuthMiddleware(), s.handleUserIconUpload)
 		api.GET("/me", s.AuthMiddleware(), s.handleMe)
 		api.GET("/login-history", s.AuthMiddleware(), s.handleLoginHistory)
 		api.POST("/markdown", s.AuthMiddleware(), s.handleMarkdownSubmit)

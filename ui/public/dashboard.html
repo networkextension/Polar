@@ -48,6 +48,27 @@
               <button id="themeToggleBtn" class="btn-secondary drawer-action-btn" type="button">切换到黑白样式</button>
             </div>
             <div class="drawer-section">
+              <div class="badge">头像</div>
+              <div class="profile-panel">
+                <img id="userIcon" class="avatar" alt="用户头像" />
+                <div class="profile-meta">
+                  <input id="iconFile" type="file" accept="image/*" />
+                  <div id="iconEditor" class="icon-editor">
+                    <canvas id="iconCanvas" class="icon-canvas" width="160" height="160"></canvas>
+                    <div class="toolbar">
+                      <label for="iconZoom">缩放</label>
+                      <input id="iconZoom" class="range-input" type="range" min="1" max="3" step="0.01" value="1" />
+                    </div>
+                    <div class="toolbar">
+                      <button id="saveIconBtn" class="btn-secondary drawer-action-btn" type="button">保存头像</button>
+                      <button id="cancelIconBtn" class="btn-secondary drawer-action-btn" type="button">取消</button>
+                    </div>
+                  </div>
+                  <div id="iconStatus" class="status-text">支持上传与简单裁切。</div>
+                </div>
+              </div>
+            </div>
+            <div class="drawer-section">
               <div class="badge">Passkey</div>
               <p class="drawer-help">绑定 Passkey 后可使用指纹或人脸快速登录。</p>
               <button id="passkeyRegisterBtn" class="btn-secondary drawer-action-btn" type="button">绑定 Passkey</button>
@@ -114,6 +135,14 @@
       const themeToggleBtn = document.getElementById("themeToggleBtn");
       const passkeyRegisterBtn = document.getElementById("passkeyRegisterBtn");
       const passkeyStatus = document.getElementById("passkeyStatus");
+      const userIcon = document.getElementById("userIcon");
+      const iconFile = document.getElementById("iconFile");
+      const iconEditor = document.getElementById("iconEditor");
+      const iconCanvas = document.getElementById("iconCanvas");
+      const iconZoom = document.getElementById("iconZoom");
+      const saveIconBtn = document.getElementById("saveIconBtn");
+      const cancelIconBtn = document.getElementById("cancelIconBtn");
+      const iconStatus = document.getElementById("iconStatus");
       const groupName = document.getElementById("groupName");
       const groupMeta = document.getElementById("groupMeta");
       const addTagBtn = document.getElementById("addTagBtn");
@@ -219,6 +248,11 @@
         groupMeta.textContent = isAdmin ? "可管理标签与内容" : "基础浏览与发帖";
         addTagBtn.disabled = !isAdmin;
         addTagBtn.textContent = isAdmin ? "添加 Tag" : "仅管理员可添加";
+        if (data.icon_url) {
+          userIcon.src = `${API_BASE}${data.icon_url}`;
+        } else {
+          userIcon.src = makeDefaultAvatar(data.username || "U");
+        }
       }
 
       function openTagModal() {
@@ -387,6 +421,124 @@
         }
       });
 
+      const iconCtx = iconCanvas.getContext("2d");
+      let iconImage = null;
+      let baseScale = 1;
+      let zoomValue = 1;
+      let offsetX = 0;
+      let offsetY = 0;
+      let dragging = false;
+      let dragStartX = 0;
+      let dragStartY = 0;
+
+      iconFile.addEventListener("change", () => {
+        const file = iconFile.files && iconFile.files[0];
+        if (!file) {
+          return;
+        }
+        if (!file.type.startsWith("image/")) {
+          iconStatus.textContent = "请选择图片文件。";
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            iconImage = img;
+            baseScale = Math.max(iconCanvas.width / img.width, iconCanvas.height / img.height);
+            zoomValue = 1;
+            offsetX = 0;
+            offsetY = 0;
+            iconZoom.value = "1";
+            iconEditor.classList.add("active");
+            drawIconPreview();
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+
+      iconZoom.addEventListener("input", () => {
+        zoomValue = Number(iconZoom.value);
+        drawIconPreview();
+      });
+
+      iconCanvas.addEventListener("mousedown", (event) => {
+        dragging = true;
+        dragStartX = event.clientX;
+        dragStartY = event.clientY;
+      });
+
+      window.addEventListener("mousemove", (event) => {
+        if (!dragging) return;
+        offsetX += event.clientX - dragStartX;
+        offsetY += event.clientY - dragStartY;
+        dragStartX = event.clientX;
+        dragStartY = event.clientY;
+        drawIconPreview();
+      });
+
+      window.addEventListener("mouseup", () => {
+        dragging = false;
+      });
+
+      iconCanvas.addEventListener("touchstart", (event) => {
+        if (!event.touches[0]) return;
+        dragging = true;
+        dragStartX = event.touches[0].clientX;
+        dragStartY = event.touches[0].clientY;
+      });
+
+      window.addEventListener("touchmove", (event) => {
+        if (!dragging || !event.touches[0]) return;
+        offsetX += event.touches[0].clientX - dragStartX;
+        offsetY += event.touches[0].clientY - dragStartY;
+        dragStartX = event.touches[0].clientX;
+        dragStartY = event.touches[0].clientY;
+        drawIconPreview();
+      });
+
+      window.addEventListener("touchend", () => {
+        dragging = false;
+      });
+
+      cancelIconBtn.addEventListener("click", () => {
+        iconEditor.classList.remove("active");
+        iconFile.value = "";
+        iconStatus.textContent = "已取消编辑。";
+      });
+
+      saveIconBtn.addEventListener("click", async () => {
+        if (!iconImage) return;
+        iconStatus.textContent = "正在上传...";
+        iconCanvas.toBlob(async (blob) => {
+          if (!blob) {
+            iconStatus.textContent = "生成图片失败。";
+            return;
+          }
+          const formData = new FormData();
+          formData.append("icon", blob, "icon.png");
+          try {
+            const res = await fetch(`${API_BASE}/api/user/icon`, {
+              method: "POST",
+              credentials: "include",
+              body: formData,
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              iconStatus.textContent = data.error || "上传失败";
+              return;
+            }
+            userIcon.src = `${API_BASE}${data.icon_url}?v=${Date.now()}`;
+            iconEditor.classList.remove("active");
+            iconFile.value = "";
+            iconStatus.textContent = "头像已更新。";
+          } catch (err) {
+            iconStatus.textContent = "网络错误，请重试。";
+          }
+        }, "image/png", 0.92);
+      });
+
       loadProfile();
       loadEntries(true);
       loadLoginHistory();
@@ -493,6 +645,41 @@
           obj.response.userHandle = bufferToBase64URL(credential.response.userHandle);
         }
         return obj;
+      }
+
+      function drawIconPreview() {
+        if (!iconImage) return;
+        const scale = baseScale * zoomValue;
+        const drawW = iconImage.width * scale;
+        const drawH = iconImage.height * scale;
+        const minX = iconCanvas.width - drawW;
+        const minY = iconCanvas.height - drawH;
+        offsetX = Math.min(0, Math.max(minX, offsetX));
+        offsetY = Math.min(0, Math.max(minY, offsetY));
+
+        iconCtx.clearRect(0, 0, iconCanvas.width, iconCanvas.height);
+        iconCtx.drawImage(
+          iconImage,
+          (iconCanvas.width - drawW) / 2 + offsetX,
+          (iconCanvas.height - drawH) / 2 + offsetY,
+          drawW,
+          drawH
+        );
+      }
+
+      function makeDefaultAvatar(name) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 160;
+        canvas.height = 160;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#0f172a";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#38bdf8";
+        ctx.font = "bold 72px SF Mono, Fira Code, monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(name.trim().charAt(0).toUpperCase(), canvas.width / 2, canvas.height / 2);
+        return canvas.toDataURL("image/png");
       }
     </script>
   </body>
