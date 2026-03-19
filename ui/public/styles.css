@@ -134,6 +134,13 @@ button:hover {
   margin-bottom: 20px;
 }
 
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -153,6 +160,88 @@ button:hover {
 
 .grid.editor-layout {
   grid-template-columns: 1fr;
+}
+
+.drawer-layout {
+  position: relative;
+  display: block;
+}
+
+.entry-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: min(86vw, 360px);
+  height: 100vh;
+  max-height: none;
+  border-radius: 0 16px 16px 0;
+  transform: translateX(-105%);
+  transition: transform 0.25s ease;
+}
+
+.entry-drawer.open {
+  transform: translateX(0);
+}
+
+.drawer-main {
+  min-width: 0;
+  min-height: 65vh;
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 12px;
+}
+
+.drawer-footer {
+  flex-shrink: 0;
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.drawer-section {
+  margin-bottom: 12px;
+}
+
+.drawer-help {
+  margin: 10px 0 12px;
+  font-size: 13px;
+}
+
+.drawer-action-btn {
+  width: 100%;
+  justify-content: center;
+}
+
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: block;
+  background: rgba(2, 6, 23, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.drawer-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .panel {
@@ -182,11 +271,59 @@ button:hover {
   box-shadow: 0 8px 16px rgba(15, 23, 42, 0.4);
 }
 
+.list li.active {
+  background: rgba(56, 189, 248, 0.2);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 12px 24px rgba(14, 165, 233, 0.18);
+}
+
 .content-box {
-  white-space: pre-wrap;
+  white-space: normal;
   line-height: 1.6;
   color: var(--text);
   font-size: 14px;
+  min-height: 420px;
+}
+
+.content-box > :first-child {
+  margin-top: 0;
+}
+
+.content-box > :last-child {
+  margin-bottom: 0;
+}
+
+.content-box p,
+.content-box ul,
+.content-box ol,
+.content-box blockquote,
+.content-box pre {
+  margin: 0 0 10px;
+}
+
+.content-box h1,
+.content-box h2,
+.content-box h3,
+.content-box h4,
+.content-box h5,
+.content-box h6 {
+  margin: 14px 0 8px;
+  line-height: 1.35;
+}
+
+.content-box ul,
+.content-box ol {
+  padding-left: 20px;
+}
+
+.content-box li {
+  margin-bottom: 4px;
+}
+
+.content-box pre,
+.content-box code {
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .toolbar {
@@ -195,10 +332,6 @@ button:hover {
   align-items: center;
   margin-bottom: 12px;
   flex-wrap: wrap;
-}
-
-.passkey-panel {
-  margin-bottom: 16px;
 }
 
 .status-text {
@@ -225,7 +358,45 @@ textarea {
 }
 
 @media (max-width: 860px) {
+  body {
+    align-items: stretch;
+    justify-content: flex-start;
+    padding: 0;
+  }
+
+  .dashboard {
+    width: 100%;
+    max-width: none;
+    padding: 16px;
+  }
+
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .drawer-layout {
+    display: block;
+  }
+
+  .entry-drawer {
+    width: min(86vw, 360px);
+  }
+
+  .drawer-close {
+    display: inline-flex;
+  }
+
+  .drawer-main {
+    min-height: auto;
+  }
+
+  .content-box {
+    min-height: 280px;
   }
 }
