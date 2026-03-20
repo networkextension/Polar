@@ -174,7 +174,7 @@ This keeps the core product path resilient.
 ### Start the backend
 
 ```bash
-cd /Users/apple/github/Polar-
+cd /path/to/Polar-
 env GOCACHE=/tmp/polar-go-cache go run ./cmd/dock
 ```
 
@@ -185,7 +185,7 @@ Default backend address:
 ### Start the UI
 
 ```bash
-cd /Users/apple/github/Polar-/ui
+cd /path/to/Polar-/ui
 node server.js
 ```
 
