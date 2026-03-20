@@ -498,6 +498,9 @@ button:hover {
 }
 
 .post-author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
   color: var(--text);
 }
@@ -521,6 +524,61 @@ button:hover {
   object-fit: cover;
   aspect-ratio: 4 / 3;
   border: 1px solid var(--border);
+}
+
+.post-videos {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.post-videos video {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #000;
+  max-height: 320px;
+  cursor: zoom-in;
+}
+
+.video-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.video-modal.open {
+  display: flex;
+}
+
+.video-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.8);
+}
+
+.video-modal-content {
+  position: relative;
+  z-index: 1;
+  width: min(96vw, 1100px);
+  display: grid;
+  gap: 10px;
+  justify-items: end;
+}
+
+.video-modal-player {
+  width: 100%;
+  max-height: calc(100vh - 120px);
+  background: #000;
+  border-radius: 12px;
+}
+
+.video-modal-close {
+  min-width: 88px;
 }
 
 .post-actions {
@@ -549,12 +607,18 @@ button:hover {
   background: var(--surface-strong);
   border-radius: 10px;
   padding: 10px 12px;
+  display: flex;
+  gap: 10px;
 }
 
 .reply-meta {
   font-size: 12px;
   color: var(--muted);
   margin-bottom: 6px;
+}
+
+.reply-body {
+  flex: 1;
 }
 
 .reply-content {
@@ -814,6 +878,19 @@ textarea {
   transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
+.chat-item-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-item-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .chat-item.active {
   border-color: var(--active-border);
   background: var(--active-bg);
@@ -887,6 +964,34 @@ textarea {
 .message-meta {
   font-size: 12px;
   color: var(--muted);
+}
+
+.message-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.message-item.mine .message-head {
+  flex-direction: row-reverse;
+}
+
+.avatar-sm {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: rgba(56, 189, 248, 0.2);
+}
+
+.avatar-xs {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: rgba(56, 189, 248, 0.2);
 }
 
 .message-bubble {

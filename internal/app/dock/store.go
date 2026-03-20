@@ -69,6 +69,7 @@ type Post struct {
 	ID         int64     `json:"id"`
 	UserID     string    `json:"user_id"`
 	Username   string    `json:"username"`
+	UserIcon   string    `json:"user_icon"`
 	TagID      *int64    `json:"tag_id,omitempty"`
 	Content    string    `json:"content"`
 	CreatedAt  time.Time `json:"created_at"`
@@ -76,6 +77,7 @@ type Post struct {
 	ReplyCount int       `json:"reply_count"`
 	LikedByMe  bool      `json:"liked_by_me"`
 	Images     []string  `json:"images"`
+	Videos     []string  `json:"videos"`
 }
 
 type PostReply struct {
@@ -83,6 +85,7 @@ type PostReply struct {
 	PostID    int64     `json:"post_id"`
 	UserID    string    `json:"user_id"`
 	Username  string    `json:"username"`
+	UserIcon  string    `json:"user_icon"`
 	Content   string    `json:"content"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -100,6 +103,7 @@ type ChatSummary struct {
 	ID            int64      `json:"id"`
 	OtherUserID   string     `json:"other_user_id"`
 	OtherUsername string     `json:"other_username"`
+	OtherUserIcon string     `json:"other_user_icon"`
 	LastMessage   string     `json:"last_message"`
 	LastMessageAt *time.Time `json:"last_message_at,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
@@ -111,6 +115,7 @@ type ChatMessage struct {
 	ThreadID       int64      `json:"thread_id"`
 	SenderID       string     `json:"sender_id"`
 	SenderUsername string     `json:"sender_username"`
+	SenderIcon     string     `json:"sender_icon"`
 	Content        string     `json:"content"`
 	CreatedAt      time.Time  `json:"created_at"`
 	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
@@ -196,6 +201,13 @@ CREATE TABLE IF NOT EXISTS post_images (
 	created_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS post_videos (
+	id BIGSERIAL PRIMARY KEY,
+	post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+	file_url TEXT NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS post_likes (
 	post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -247,6 +259,7 @@ CREATE INDEX IF NOT EXISTS idx_login_records_user_id_logged_in_at ON login_recor
 CREATE INDEX IF NOT EXISTS idx_tags_sort_order_created_at ON tags(sort_order DESC, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_post_images_post_id ON post_images(post_id);
+CREATE INDEX IF NOT EXISTS idx_post_videos_post_id ON post_videos(post_id);
 CREATE INDEX IF NOT EXISTS idx_post_likes_post_id ON post_likes(post_id);
 CREATE INDEX IF NOT EXISTS idx_post_replies_post_id ON post_replies(post_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_threads_pair ON chat_threads(user_low, user_high);
@@ -686,6 +699,17 @@ func (s *Server) addPostImage(postID int64, fileURL string, createdAt time.Time)
 	return err
 }
 
+func (s *Server) addPostVideo(postID int64, fileURL string, createdAt time.Time) error {
+	_, err := s.db.Exec(
+		`INSERT INTO post_videos (post_id, file_url, created_at)
+		 VALUES ($1, $2, $3)`,
+		postID,
+		fileURL,
+		createdAt,
+	)
+	return err
+}
+
 func (s *Server) listPosts(userID string, limit, offset int) ([]Post, bool, error) {
 	if limit <= 0 {
 		limit = 20
@@ -694,7 +718,7 @@ func (s *Server) listPosts(userID string, limit, offset int) ([]Post, bool, erro
 		offset = 0
 	}
 	rows, err := s.db.Query(
-		`SELECT p.id, p.user_id, u.username, p.tag_id, p.content, p.created_at,
+		`SELECT p.id, p.user_id, u.username, u.icon_url, p.tag_id, p.content, p.created_at,
 		        COALESCE(l.like_count, 0) AS like_count,
 		        COALESCE(r.reply_count, 0) AS reply_count,
 		        (pl.user_id IS NOT NULL) AS liked_by_me
@@ -730,6 +754,7 @@ func (s *Server) listPosts(userID string, limit, offset int) ([]Post, bool, erro
 			&post.ID,
 			&post.UserID,
 			&post.Username,
+			&post.UserIcon,
 			&post.TagID,
 			&post.Content,
 			&post.CreatedAt,
@@ -781,8 +806,33 @@ func (s *Server) listPosts(userID string, limit, offset int) ([]Post, bool, erro
 		return posts, hasMore, err
 	}
 
+	videoRows, err := s.db.Query(
+		`SELECT post_id, file_url FROM post_videos
+		  WHERE post_id = ANY($1)
+		  ORDER BY id ASC`,
+		pq.Array(postIDs),
+	)
+	if err != nil {
+		return posts, hasMore, err
+	}
+	defer videoRows.Close()
+
+	videoMap := make(map[int64][]string, len(postIDs))
+	for videoRows.Next() {
+		var postID int64
+		var fileURL string
+		if err := videoRows.Scan(&postID, &fileURL); err != nil {
+			return posts, hasMore, err
+		}
+		videoMap[postID] = append(videoMap[postID], fileURL)
+	}
+	if err := videoRows.Err(); err != nil {
+		return posts, hasMore, err
+	}
+
 	for i := range posts {
 		posts[i].Images = imageMap[posts[i].ID]
+		posts[i].Videos = videoMap[posts[i].ID]
 	}
 
 	return posts, hasMore, nil
@@ -791,7 +841,7 @@ func (s *Server) listPosts(userID string, limit, offset int) ([]Post, bool, erro
 func (s *Server) getPostByID(userID string, postID int64) (*Post, error) {
 	var post Post
 	err := s.db.QueryRow(
-		`SELECT p.id, p.user_id, u.username, p.tag_id, p.content, p.created_at,
+		`SELECT p.id, p.user_id, u.username, u.icon_url, p.tag_id, p.content, p.created_at,
 		        COALESCE(l.like_count, 0) AS like_count,
 		        COALESCE(r.reply_count, 0) AS reply_count,
 		        (pl.user_id IS NOT NULL) AS liked_by_me
@@ -815,6 +865,7 @@ func (s *Server) getPostByID(userID string, postID int64) (*Post, error) {
 		&post.ID,
 		&post.UserID,
 		&post.Username,
+		&post.UserIcon,
 		&post.TagID,
 		&post.Content,
 		&post.CreatedAt,
@@ -850,6 +901,28 @@ func (s *Server) getPostByID(userID string, postID int64) (*Post, error) {
 		return nil, err
 	}
 	post.Images = images
+
+	videoRows, err := s.db.Query(
+		`SELECT file_url FROM post_videos WHERE post_id = $1 ORDER BY id ASC`,
+		postID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer videoRows.Close()
+
+	var videos []string
+	for videoRows.Next() {
+		var url string
+		if err := videoRows.Scan(&url); err != nil {
+			return nil, err
+		}
+		videos = append(videos, url)
+	}
+	if err := videoRows.Err(); err != nil {
+		return nil, err
+	}
+	post.Videos = videos
 
 	return &post, nil
 }
@@ -896,7 +969,7 @@ func (s *Server) listReplies(postID int64, limit, offset int) ([]PostReply, bool
 		offset = 0
 	}
 	rows, err := s.db.Query(
-		`SELECT r.id, r.post_id, r.user_id, u.username, r.content, r.created_at
+		`SELECT r.id, r.post_id, r.user_id, u.username, u.icon_url, r.content, r.created_at
 		   FROM post_replies r
 		   JOIN users u ON u.id = r.user_id
 		  WHERE r.post_id = $1
@@ -919,6 +992,7 @@ func (s *Server) listReplies(postID int64, limit, offset int) ([]PostReply, bool
 			&reply.PostID,
 			&reply.UserID,
 			&reply.Username,
+			&reply.UserIcon,
 			&reply.Content,
 			&reply.CreatedAt,
 		); err != nil {
@@ -1003,6 +1077,7 @@ func (s *Server) listChatThreads(userID string, limit, offset int) ([]ChatSummar
 		`SELECT t.id,
 		        CASE WHEN t.user_low = $1 THEN t.user_high ELSE t.user_low END AS other_id,
 		        u.username,
+		        u.icon_url,
 		        t.last_message,
 		        t.last_message_at,
 		        t.created_at,
@@ -1038,6 +1113,7 @@ func (s *Server) listChatThreads(userID string, limit, offset int) ([]ChatSummar
 			&summary.ID,
 			&summary.OtherUserID,
 			&summary.OtherUsername,
+			&summary.OtherUserIcon,
 			&summary.LastMessage,
 			&lastMessageAt,
 			&summary.CreatedAt,
@@ -1069,6 +1145,7 @@ func (s *Server) getChatSummary(userID string, threadID int64) (*ChatSummary, er
 		`SELECT t.id,
 		        CASE WHEN t.user_low = $1 THEN t.user_high ELSE t.user_low END AS other_id,
 		        u.username,
+		        u.icon_url,
 		        t.last_message,
 		        t.last_message_at,
 		        t.created_at,
@@ -1091,6 +1168,7 @@ func (s *Server) getChatSummary(userID string, threadID int64) (*ChatSummary, er
 		&summary.ID,
 		&summary.OtherUserID,
 		&summary.OtherUsername,
+		&summary.OtherUserIcon,
 		&summary.LastMessage,
 		&lastMessageAt,
 		&summary.CreatedAt,
@@ -1116,7 +1194,7 @@ func (s *Server) listChatMessages(threadID int64, limit, offset int) ([]ChatMess
 		offset = 0
 	}
 	rows, err := s.db.Query(
-		`SELECT m.id, m.thread_id, m.sender_id, u.username, m.content, m.created_at, m.deleted_at, m.deleted_by
+		`SELECT m.id, m.thread_id, m.sender_id, u.username, u.icon_url, m.content, m.created_at, m.deleted_at, m.deleted_by
 		   FROM chat_messages m
 		   JOIN users u ON u.id = m.sender_id
 		  WHERE m.thread_id = $1
@@ -1141,6 +1219,7 @@ func (s *Server) listChatMessages(threadID int64, limit, offset int) ([]ChatMess
 			&msg.ThreadID,
 			&msg.SenderID,
 			&msg.SenderUsername,
+			&msg.SenderIcon,
 			&msg.Content,
 			&msg.CreatedAt,
 			&deletedAt,

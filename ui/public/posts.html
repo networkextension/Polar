@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>帖子广场</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/polaris-logo.svg" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -35,6 +37,8 @@
       let nextOffset = 0;
       let hasMore = true;
       let currentUserId = "";
+      let videoModal = null;
+      let videoModalPlayer = null;
 
       function buildAssetUrl(url) {
         if (!url) return "";
@@ -42,8 +46,67 @@
         return `${API_BASE}${url}`;
       }
 
+      function makeDefaultAvatar(name) {
+        const canvas = document.createElement("canvas");
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#0f172a";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#38bdf8";
+        ctx.font = "bold 28px SF Mono, Fira Code, monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText((name || "U").trim().charAt(0).toUpperCase(), canvas.width / 2, canvas.height / 2);
+        return canvas.toDataURL("image/png");
+      }
+
+      function resolveAvatar(name, iconUrl) {
+        return iconUrl ? buildAssetUrl(iconUrl) : makeDefaultAvatar(name);
+      }
+
       function formatTime(value) {
         return new Date(value).toLocaleString();
+      }
+
+      function ensureVideoModal() {
+        if (videoModal) return;
+        const modal = document.createElement("div");
+        modal.className = "video-modal";
+        modal.innerHTML = `
+          <div class="video-modal-backdrop"></div>
+          <div class="video-modal-content panel">
+            <button class="video-modal-close btn-inline btn-secondary" type="button">关闭</button>
+            <video class="video-modal-player" controls autoplay preload="metadata"></video>
+          </div>
+        `;
+        document.body.appendChild(modal);
+        videoModal = modal;
+        videoModalPlayer = modal.querySelector(".video-modal-player");
+
+        const close = () => {
+          if (!videoModal) return;
+          videoModal.classList.remove("open");
+          if (videoModalPlayer) {
+            videoModalPlayer.pause();
+            videoModalPlayer.removeAttribute("src");
+            videoModalPlayer.load();
+          }
+        };
+
+        modal.querySelector(".video-modal-backdrop").addEventListener("click", close);
+        modal.querySelector(".video-modal-close").addEventListener("click", close);
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") close();
+        });
+      }
+
+      function openVideoModal(url) {
+        if (!url) return;
+        ensureVideoModal();
+        videoModalPlayer.src = url;
+        videoModal.classList.add("open");
+        videoModalPlayer.play().catch(() => {});
       }
 
       async function loadProfile() {
@@ -64,10 +127,14 @@
         }
         container.innerHTML = replies
           .map((reply) => {
+            const avatar = resolveAvatar(reply.username, reply.user_icon);
             return `
               <div class="reply-item">
-                <div class="reply-meta">${reply.username} · ${formatTime(reply.created_at)}</div>
-                <div class="reply-content">${reply.content}</div>
+                <img class="avatar-xs" src="${avatar}" alt="${reply.username}" />
+                <div class="reply-body">
+                  <div class="reply-meta">${reply.username} · ${formatTime(reply.created_at)}</div>
+                  <div class="reply-content">${reply.content}</div>
+                </div>
               </div>
             `;
           })
@@ -94,6 +161,17 @@
         const images = (post.images || [])
           .map((url) => `<img src="${buildAssetUrl(url)}" alt="post image" />`)
           .join("");
+        const videos = (post.videos || [])
+          .map(
+            (url) => `
+              <video controls preload="metadata">
+                <source src="${buildAssetUrl(url)}" />
+                你的浏览器不支持 video 标签
+              </video>
+            `
+          )
+          .join("");
+        const videoSection = videos ? `<div class="post-videos">${videos}</div>` : "";
 
         const isSelf = currentUserId && post.user_id === currentUserId;
         const authorLabel = isSelf
@@ -102,13 +180,19 @@
               post.user_id
             )}&username=${encodeURIComponent(post.username)}">${post.username}</a>`;
 
+        const avatar = resolveAvatar(post.username, post.user_icon);
+
         card.innerHTML = `
           <div class="post-header">
-            <div class="post-author">${authorLabel}</div>
+            <div class="post-author">
+              <img class="avatar-sm" src="${avatar}" alt="${post.username}" />
+              ${authorLabel}
+            </div>
             <div class="post-time">${formatTime(post.created_at)}</div>
           </div>
           <div class="post-content">${post.content}</div>
           <div class="post-images">${images}</div>
+          ${videoSection}
           <div class="post-actions">
             <button class="btn-inline btn-secondary like-btn" type="button">
               ${post.liked_by_me ? "已点赞" : "点赞"} · ${post.like_count}
@@ -118,6 +202,17 @@
         `;
 
         const likeBtn = card.querySelector(".like-btn");
+        const videoEls = card.querySelectorAll(".post-videos video");
+
+        videoEls.forEach((videoEl) => {
+          videoEl.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const src = videoEl.currentSrc || videoEl.querySelector("source")?.src || "";
+            videoEl.pause();
+            openVideoModal(src);
+          });
+        });
 
         likeBtn.addEventListener("click", async () => {
           const method = post.liked_by_me ? "DELETE" : "POST";

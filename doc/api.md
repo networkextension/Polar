@@ -171,7 +171,7 @@
 
 ## 帖子（Posts）
 
-### 发帖（至少一张图片）
+### 发帖（图片/视频可选）
 
 **POST** `/api/posts`
 
@@ -179,7 +179,8 @@
 
 字段：
 - `content`（必填）：帖子内容
-- `images`（必填，可多张）：图片文件
+- `images`（可选，可多张）：图片文件（字段名固定 `images`）
+- `videos`（可选，可多条）：视频文件（字段名固定 `videos`）
 - `tag_id`（可选）：标签 ID
 
 成功响应：
@@ -188,6 +189,7 @@
   "message": "发布成功",
   "id": 12,
   "images": ["/uploads/20260319_120000_abcd1234.png"],
+  "videos": ["/uploads/20260319_120001_efgh5678.mp4"],
   "content": "今天分享一个 Go 小技巧。",
   "tag_id": 1,
   "created": "2026-03-19T12:00:00Z"
@@ -206,13 +208,15 @@
       "id": 12,
       "user_id": "u123",
       "username": "johndoe",
+      "user_icon": "/uploads/avatar_u123.png",
       "tag_id": 1,
       "content": "今天分享一个 Go 小技巧。",
       "created_at": "2026-03-19T12:00:00Z",
       "like_count": 3,
       "reply_count": 2,
       "liked_by_me": true,
-      "images": ["/uploads/20260319_120000_abcd1234.png"]
+      "images": ["/uploads/20260319_120000_abcd1234.png"],
+      "videos": ["/uploads/20260319_120001_efgh5678.mp4"]
     }
   ],
   "has_more": false,
@@ -231,13 +235,15 @@
     "id": 12,
     "user_id": "u123",
     "username": "johndoe",
+    "user_icon": "/uploads/avatar_u123.png",
     "tag_id": 1,
     "content": "今天分享一个 Go 小技巧。",
     "created_at": "2026-03-19T12:00:00Z",
     "like_count": 3,
     "reply_count": 2,
     "liked_by_me": true,
-    "images": ["/uploads/20260319_120000_abcd1234.png"]
+    "images": ["/uploads/20260319_120000_abcd1234.png"],
+    "videos": ["/uploads/20260319_120001_efgh5678.mp4"]
   }
 }
 ```
@@ -296,6 +302,7 @@
       "post_id": 12,
       "user_id": "u456",
       "username": "alice",
+      "user_icon": "/uploads/avatar_u456.png",
       "content": "写得很好，感谢分享！",
       "created_at": "2026-03-19T12:10:00Z"
     }
@@ -304,6 +311,12 @@
   "next_offset": 1
 }
 ```
+
+### iOS 对接提示（Posts）
+
+- 发帖请使用 `multipart/form-data`，媒体字段名固定为 `images` 和 `videos`。
+- `images`、`videos` 都允许为空数组或不传；仅 `content` 必填。
+- 帖子列表/详情中的媒体 URL 为相对路径（如 `/uploads/xxx.mp4`），iOS 侧请拼接服务端域名后再加载。
 
 ## 新建 Markdown 记录
 

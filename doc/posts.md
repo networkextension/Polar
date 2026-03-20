@@ -18,6 +18,7 @@ like_count | 点赞数 | number
 reply_count | 回复数 | number
 liked_by_me | 当前登录用户是否已点赞 | boolean
 images | 图片 URL 列表 | string[]
+videos | 视频 URL 列表 | string[]
 
 ### 1.2 PostReply（回复）
 
@@ -44,8 +45,8 @@ updated_at | 更新时间 | string (ISO8601)
 
 ## 2. 业务规则
 
-1. **发帖至少 1 张图片**  
-   `POST /api/posts` 必须带 `images` 文件数组，空数组会返回 400。
+1. **发帖媒体可选**  
+   `POST /api/posts` 中 `images`、`videos` 都是可选文件数组（字段名分别为 `images`、`videos`）。
 
 2. **点赞为幂等操作**  
    重复点赞不会报错，`like_count` 保持不变。取消点赞同理。
@@ -65,14 +66,14 @@ updated_at | 更新时间 | string (ISO8601)
 
 - 页面显示最新帖子列表
 - 每条帖子展示：
-  - 用户名、发布时间、正文、图片缩略图
+  - 用户名、发布时间、正文、图片缩略图、视频播放器
   - 点赞按钮 + 数量
   - “查看详情”跳转
 - 点赞按钮点击后立即更新 UI
 
 ### 3.2 帖子详情（post.html）
 
-- 顶部展示帖子内容与图片
+- 顶部展示帖子内容、图片与视频
 - 点赞按钮（同广场）
 - 回复区：默认展开，支持实时追加
 - 提交回复成功后刷新回复列表
@@ -80,7 +81,8 @@ updated_at | 更新时间 | string (ISO8601)
 ### 3.3 发帖（post.html / 未来可拆出 new-post.html）
 
 - 内容为必填
-- 图片至少 1 张
+- 图片可选上传（支持多选）
+- 视频可选上传（支持多选）
 - 成功后跳转至详情页
 
 ## 4. 错误码约定（建议）
@@ -104,6 +106,7 @@ HTTP 状态码 | 说明 | UI 处理
 ## 5. iOS 端实现提示
 
 - 图片上传需使用 `multipart/form-data`，字段名 `images`
+- 视频上传需使用 `multipart/form-data`，字段名 `videos`
 - 帖子详情建议缓存图片 URL
+- 帖子详情可按需预加载视频封面（`preload=metadata`）
 - 点赞状态由 `liked_by_me` 驱动，避免本地猜测
-

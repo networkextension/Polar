@@ -1,6 +1,7 @@
 package dock
 
 import (
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -42,9 +43,24 @@ func (s *Server) handlePostCreate(c *gin.Context) {
 	}
 
 	files := form.File["images"]
-	if len(files) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "至少需要上传一张图片"})
-		return
+	videoFiles := form.File["videos"]
+	for _, file := range files {
+		if file == nil {
+			continue
+		}
+		if !isUploadType(file, "image/") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持上传图片文件"})
+			return
+		}
+	}
+	for _, file := range videoFiles {
+		if file == nil {
+			continue
+		}
+		if !isUploadType(file, "video/") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持上传视频文件"})
+			return
+		}
 	}
 
 	if s.uploadDir == "" {
@@ -64,7 +80,7 @@ func (s *Server) handlePostCreate(c *gin.Context) {
 		return
 	}
 
-	savedFiles := make([]string, 0, len(files))
+	savedFiles := make([]string, 0, len(files)+len(videoFiles))
 	imageURLs := make([]string, 0, len(files))
 	for _, file := range files {
 		if file == nil {
@@ -88,16 +104,34 @@ func (s *Server) handlePostCreate(c *gin.Context) {
 		imageURLs = append(imageURLs, publicURL)
 	}
 
-	if len(imageURLs) == 0 {
-		s.cleanupPostUpload(postID, savedFiles)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "图片保存失败"})
-		return
+	videoURLs := make([]string, 0, len(videoFiles))
+	for _, file := range videoFiles {
+		if file == nil {
+			continue
+		}
+		filename := buildUploadFilename(file.Filename)
+		dstPath := filepath.Join(s.uploadDir, filename)
+		if err := c.SaveUploadedFile(file, dstPath); err != nil {
+			s.cleanupPostUpload(postID, append(savedFiles, dstPath))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "视频保存失败"})
+			return
+		}
+
+		publicURL := "/uploads/" + filename
+		if err := s.addPostVideo(postID, publicURL, now); err != nil {
+			s.cleanupPostUpload(postID, append(savedFiles, dstPath))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+			return
+		}
+		savedFiles = append(savedFiles, dstPath)
+		videoURLs = append(videoURLs, publicURL)
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "发布成功",
 		"id":      postID,
 		"images":  imageURLs,
+		"videos":  videoURLs,
 		"content": content,
 		"tag_id":  tagID,
 		"created": now,
@@ -303,4 +337,15 @@ func (s *Server) cleanupPostUpload(postID int64, files []string) {
 	for _, path := range files {
 		_ = os.Remove(path)
 	}
+}
+
+func isUploadType(file *multipart.FileHeader, typePrefix string) bool {
+	if file == nil {
+		return false
+	}
+	contentType := strings.ToLower(strings.TrimSpace(file.Header.Get("Content-Type")))
+	if contentType == "" {
+		return false
+	}
+	return strings.HasPrefix(contentType, typePrefix)
 }
