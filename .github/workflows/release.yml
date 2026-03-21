@@ -4,6 +4,8 @@ on:
   push:
     tags:
       - 'v*'
+  release:
+    types: [published]
 
 permissions:
   contents: write
@@ -98,11 +100,27 @@ jobs:
           ls -la "$TAR_NAME" "$TAR_NAME.sha256"
 
       - name: Create GitHub Release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v1
         with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
           files: |
             polar-${{ github.ref_name }}-freebsd-amd64.tar.gz
             polar-${{ github.ref_name }}-freebsd-amd64.tar.gz.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload to existing Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: |
+            polar-${{ github.event.release.tag_name }}-freebsd-amd64.tar.gz
+            polar-${{ github.event.release.tag_name }}-freebsd-amd64.tar.gz.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
