@@ -9,7 +9,7 @@ set -euo pipefail
 #   TARGET=linux/amd64 ./release.sh
 #   ./release.sh v1.2.3 --upload  # 使用 gh CLI 上传到 GitHub Release（需登录）
 
-REPO_ROOT="$(cd "$(dirname ""${BASH_SOURCE[0]}"")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BIN_PATH="./cmd/dock"
 OUT_DIR="dist"
 DEFAULT_TARGET="freebsd/amd64"
@@ -57,9 +57,16 @@ trap cleanup EXIT
 # run build
 pushd "$REPO_ROOT" >/dev/null
 # you can uncomment CGO_ENABLED=0 if you want pure Go static builds (may not work on all OSes)
-# CGO_ENABLED=0 $BUILD_CMD
-eval "$BUILD_CMD"
+eval "CGO_ENABLED=0 $BUILD_CMD"
 popd >/dev/null
+
+# build UI if available
+if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+  pushd "${REPO_ROOT}/ui" >/dev/null
+  npm install
+  npm run build
+  popd >/dev/null
+fi
 
 # prepare packaging
 PKG_DIR="${OUT_DIR}/${VERSION}/${OS}_${ARCH}"
@@ -72,6 +79,11 @@ for f in LICENSE README.md; do
     cp "${REPO_ROOT}/${f}" "${PKG_DIR}/"
   fi
 done
+
+# include UI dist if built
+if [ -d "${REPO_ROOT}/ui/dist" ]; then
+  cp -r "${REPO_ROOT}/ui/dist" "${PKG_DIR}/ui"
+fi
 
 # create tarball
 TAR_NAME="polar-${VERSION}-${OS}-${ARCH}.tar.gz"
