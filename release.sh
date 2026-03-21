@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 发布脚本 - 构建并打包二进制
+# 默认目标： freebsd/amd64
+# 用法示例：
+#   ./release.sh                  # 使用默认 target 和自动生成的 version
+#   ./release.sh v1.2.3           # 指定版本号
+#   TARGET=linux/amd64 ./release.sh
+#   ./release.sh v1.2.3 --upload  # 使用 gh CLI 上传到 GitHub Release（需登录）
+
+REPO_ROOT="$(cd "$(dirname ""${BASH_SOURCE[0]}"")/.." && pwd)"
+BIN_PATH="./cmd/dock"
+OUT_DIR="dist"
+DEFAULT_TARGET="freebsd/amd64"
+TARGET=""${TARGET:-$DEFAULT_TARGET}""   # format: os/arch
+VERSION=""${1:-}""                      # optional first arg is version (e.g. v1.2.3)
+UPLOAD=false
+
+# parse flags
+for arg in ""${@:2}""; do
+  case "${arg}" in
+    --upload) UPLOAD=true ;; 
+    --help|-h) echo "Usage: $0 [version] [--upload] (set TARGET=os/arch to override)"; exit 0 ;;
+    *) ;;
+  esac
+done
+
+if [ -z "${VERSION}" ]; then
+  # try to derive version from git tag, else use short commit
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if tag=$(git describe --tags --abbrev=0 2>/dev/null || true); then
+      VERSION=""${tag:-$(git rev-parse --short HEAD)}""
+    else
+      VERSION=""$(git rev-parse --short HEAD)""
+    fi
+  else
+    VERSION="local-$(date -u +%Y%m%d%H%M%S)"
+  fi
+fi
+
+OS="${TARGET%%/*}"
+ARCH="${TARGET##*/}"
+
+# binary name convention: dock_<arch>_<os> (follow your example dock_amd64_freebsd)
+BIN_NAME="dock_${ARCH}_${OS}"
+BUILD_CMD="GOOS=${OS} GOARCH=${ARCH} go build -o ${BIN_NAME} ${BIN_PATH}"
+
+echo "Release: version=${VERSION}, target=${OS}/${ARCH}, out_dir=${OUT_DIR}"
+echo "Building binary with: ${BUILD_CMD}"
+
+# create temp workdir
+TMPDIR="$(mktemp -d)"
+cleanup() { rm -rf "$TMPDIR"; }
+trap cleanup EXIT
+
+# run build
+pushd "$REPO_ROOT" >/dev/null
+# you can uncomment CGO_ENABLED=0 if you want pure Go static builds (may not work on all OSes)
+# CGO_ENABLED=0 $BUILD_CMD
+eval "$BUILD_CMD"
+popd >/dev/null
+
+# prepare packaging
+PKG_DIR="${OUT_DIR}/${VERSION}/${OS}_${ARCH}"
+mkdir -p "${PKG_DIR}"
+mv "${REPO_ROOT}/${BIN_NAME}" "${PKG_DIR}/"
+
+# include optional files if exist
+for f in LICENSE README.md; do
+  if [ -f "${REPO_ROOT}/${f}" ]; then
+    cp "${REPO_ROOT}/${f}" "${PKG_DIR}/"
+  fi
+done
+
+# create tarball
+TAR_NAME="polar-${VERSION}-${OS}-${ARCH}.tar.gz"
+pushd "${OUT_DIR}/${VERSION}" >/dev/null
+tar -czf "${TAR_NAME}" "${OS}_${ARCH}"
+sha256sum "${TAR_NAME}" > "${TAR_NAME}.sha256"
+popd >/dev/null
+
+echo "Packaged: ${OUT_DIR}/${VERSION}/${TAR_NAME}"
+echo "Checksum: ${OUT_DIR}/${VERSION}/${TAR_NAME}.sha256"
+
+if [ "$UPLOAD" = true ]; then
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "Error: gh CLI not found. Install and authenticate (gh auth login) to upload." >&2
+    exit 1
+  fi
+
+  # requires GitHub repo context or GITHUB_REPOSITORY env (owner/repo)
+  GITHUB_REPO=""${GITHUB_REPOSITORY:-}""
+  if [ -z ""${GITHUB_REPO}"" ]; then
+    echo "GITHUB_REPOSITORY environment variable not set. Set it to 'owner/repo' to upload." >&2
+    exit 1
+  fi
+
+  RELEASE_NAME="${VERSION}"
+  ASSET_PATH="${OUT_DIR}/${VERSION}/${TAR_NAME}"
+echo "Creating/updating release ${RELEASE_NAME} in ${GITHUB_REPO} and uploading ${ASSET_PATH}..."
+gh release create "${RELEASE_NAME}" "${ASSET_PATH}" --repo "${GITHUB_REPO}" --title "${RELEASE_NAME}" --notes "Release ${RELEASE_NAME}"
+echo "Upload finished."
+fi
+
+echo "Done."
