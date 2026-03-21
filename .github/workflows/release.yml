@@ -40,6 +40,8 @@ jobs:
           npm run build
           cd ..
           echo "UI built successfully"
+
+      - name: Debug info
         run: |
           set -euo pipefail
           echo "=== go version ==="
