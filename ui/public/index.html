@@ -17,22 +17,6 @@
       <a class="link" href="/editor.html">新建 Markdown</a>
     </div>
 
-    <script>
-      const statusText = document.getElementById("statusText");
-
-      async function bootstrap() {
-        try {
-          const res = await fetch("/api/me", { credentials: "include" });
-          if (res.ok) {
-            window.location.replace("/dashboard.html");
-            return;
-          }
-        } catch (err) {
-        }
-        statusText.textContent = "请选择操作";
-      }
-
-      bootstrap();
-    </script>
+    <script type="module" src="/scripts/index.js"></script>
   </body>
 </html>

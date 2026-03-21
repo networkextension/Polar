@@ -1,5 +1,6 @@
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -8,13 +9,41 @@ const rootDir = path.resolve(__dirname, "..");
 const publicDir = path.join(rootDir, "public");
 const distDir = path.join(rootDir, "dist");
 const pkgPath = path.join(rootDir, "package.json");
+const tsconfigPath = path.join(rootDir, "tsconfig.json");
+const publicScriptsDir = path.join(publicDir, "scripts");
+
+async function runTypeScriptBuild() {
+  await rm(publicScriptsDir, { recursive: true, force: true });
+
+  await new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [path.join(rootDir, "node_modules", "typescript", "bin", "tsc"), "-p", tsconfigPath],
+      {
+        cwd: rootDir,
+        stdio: "inherit",
+      }
+    );
+
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(`TypeScript build failed with code ${code}`));
+    });
+    child.on("error", reject);
+  });
+}
 
 async function clean() {
   await rm(distDir, { recursive: true, force: true });
+  await rm(publicScriptsDir, { recursive: true, force: true });
   console.log("Cleaned ui/dist");
 }
 
 async function build() {
+  await runTypeScriptBuild();
   await rm(distDir, { recursive: true, force: true });
   await mkdir(distDir, { recursive: true });
   await cp(publicDir, distDir, { recursive: true });

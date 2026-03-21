@@ -7,6 +7,7 @@ const tls = require("tls");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_BASE = process.env.API_BASE || "http://localhost:8080";
+const UI_STATIC_DIR = process.env.UI_STATIC_DIR || "public";
 const target = new URL(API_BASE);
 const client = target.protocol === "https:" ? https : http;
 
@@ -26,7 +27,7 @@ app.get("/editor", (req, res) => {
   res.redirect("/editor.html");
 });
 
-app.use(express.static("public"));
+app.use(express.static(UI_STATIC_DIR));
 
 function proxyRequest(req, res) {
   const options = {
@@ -58,6 +59,7 @@ app.use("/uploads", proxyRequest);
 
 const server = app.listen(PORT, () => {
   console.log(`UI running on http://localhost:${PORT}`);
+  console.log(`Serving static files from ${UI_STATIC_DIR}`);
   console.log(`Proxying to ${API_BASE}`);
 });
 

@@ -25,59 +25,6 @@
       <a class="link" href="/login.html">已有账户？去登录</a>
     </div>
 
-    <script>
-      const API_BASE = "";
-      const form = document.getElementById("registerForm");
-      const alertBox = document.getElementById("alert");
-
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        alertBox.className = "alert";
-        alertBox.textContent = "";
-
-        const payload = {
-          username: form.username.value.trim(),
-          email: form.email.value.trim(),
-          password: form.password.value,
-        };
-
-        try {
-          const res = await fetch(`${API_BASE}/api/register`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify(payload),
-          });
-          const data = await res.json();
-
-          if (!res.ok) {
-            alertBox.className = "alert error";
-            alertBox.textContent = data.error || "注册失败";
-            return;
-          }
-
-          alertBox.className = "alert success";
-          alertBox.textContent = "注册成功，正在跳转...";
-          setTimeout(() => {
-            window.location.href = "/dashboard.html";
-          }, 600);
-        } catch (err) {
-          alertBox.className = "alert error";
-          alertBox.textContent = "网络错误，请稍后重试";
-        }
-      });
-
-      async function redirectIfLoggedIn() {
-        try {
-          const res = await fetch("/api/me", { credentials: "include" });
-          if (res.ok) {
-            window.location.replace("/dashboard.html");
-          }
-        } catch (err) {
-        }
-      }
-
-      redirectIfLoggedIn();
-    </script>
+    <script type="module" src="/scripts/register.js"></script>
   </body>
 </html>
