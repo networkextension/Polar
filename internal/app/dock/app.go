@@ -108,6 +108,8 @@ func NewServer(cfg Config) (*Server, error) {
 	go server.wsHub.run()
 
 	server.router = gin.Default()
+	// Increase max upload size for video files (default gin limit is 32 MiB)
+	server.router.MaxMultipartMemory = 512 << 20 // 512 MiB
 	server.router.Use(corsMiddleware())
 	if server.uploadDir != "" {
 		server.router.Static("/uploads", server.uploadDir)
