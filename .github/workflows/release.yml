@@ -14,9 +14,16 @@ jobs:
   build-and-release:
     name: Build and Publish Release (debug)
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: freebsd
+            arch: amd64
+          - os: linux
+            arch: arm64
     env:
       BIN_PATH: cmd/dock
-      BINARY_NAME: dock_amd64_freebsd
+      BINARY_NAME: dock_${{ matrix.arch }}_${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -71,11 +78,11 @@ jobs:
             echo "No go.mod found; building may fail if module mode expected"
           fi
 
-      - name: Build freebsd/amd64 binary (verbose)
+      - name: Build ${{ matrix.os }}/${{ matrix.arch }} binary (verbose)
         run: |
           set -euo pipefail
-          echo "Building: GOOS=freebsd GOARCH=amd64 CGO_ENABLED=0 go build -v -x -o \"$BINARY_NAME\" ./$BIN_PATH"
-          GOOS=freebsd GOARCH=amd64 CGO_ENABLED=0 go build -v -x -o "$BINARY_NAME" ./$BIN_PATH || {
+          echo "Building: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -v -x -o \"$BINARY_NAME\" ./$BIN_PATH"
+          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -v -x -o "$BINARY_NAME" ./$BIN_PATH || {
             echo "go build failed; printing cmd/dock tree and files:"
             ls -R cmd/dock || true
             exit 1
@@ -95,7 +102,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION=${GITHUB_REF_NAME}
-          PKG_DIR="dist/${VERSION}/freebsd_amd64"
+          PKG_DIR="dist/${VERSION}/${{ matrix.os }}_${{ matrix.arch }}"
           mkdir -p "$PKG_DIR"
           mv "$BINARY_NAME" "$PKG_DIR/"
           cp LICENSE README.md "$PKG_DIR/" || true
@@ -103,13 +110,13 @@ jobs:
           if [ -d "ui/dist" ]; then
             cp -r "ui/dist" "$PKG_DIR/ui"
           fi
-          TAR_NAME="polar-${VERSION}-freebsd-amd64.tar.gz"
-          tar -czf "$TAR_NAME" -C "dist/${VERSION}" freebsd_amd64
+          TAR_NAME="polar-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz"
+          tar -czf "$TAR_NAME" -C "dist/${VERSION}" ${{ matrix.os }}_${{ matrix.arch }}
           sha256sum "$TAR_NAME" > "$TAR_NAME.sha256"
           ls -la "$TAR_NAME" "$TAR_NAME.sha256"
 
       - name: Create GitHub Release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && matrix.os == 'freebsd' && matrix.arch == 'amd64'
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.ref_name }}
@@ -119,6 +126,8 @@ jobs:
           files: |
             polar-${{ github.ref_name }}-freebsd-amd64.tar.gz
             polar-${{ github.ref_name }}-freebsd-amd64.tar.gz.sha256
+            polar-${{ github.ref_name }}-linux-arm64.tar.gz
+            polar-${{ github.ref_name }}-linux-arm64.tar.gz.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -128,8 +137,8 @@ jobs:
         with:
           tag_name: ${{ github.event.release.tag_name }}
           files: |
-            polar-${{ github.event.release.tag_name }}-freebsd-amd64.tar.gz
-            polar-${{ github.event.release.tag_name }}-freebsd-amd64.tar.gz.sha256
+            polar-${{ github.event.release.tag_name }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+            polar-${{ github.event.release.tag_name }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
