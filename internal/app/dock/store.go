@@ -41,6 +41,16 @@ type MarkdownEntry struct {
 	UserID     string    `json:"user_id"`
 	Title      string    `json:"title"`
 	FilePath   string    `json:"file_path"`
+	IsPublic   bool      `json:"is_public"`
+	UploadedAt time.Time `json:"uploaded_at"`
+}
+
+type PublicMarkdownEntry struct {
+	ID         int64     `json:"id"`
+	UserID     string    `json:"user_id"`
+	Username   string    `json:"username"`
+	UserIcon   string    `json:"user_icon"`
+	Title      string    `json:"title"`
 	UploadedAt time.Time `json:"uploaded_at"`
 }
 
@@ -62,6 +72,13 @@ type Tag struct {
 	Description string    `json:"description"`
 	SortOrder   int       `json:"sort_order"`
 	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type SiteSettings struct {
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	IconURL     string    `json:"icon_url"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
 
@@ -160,8 +177,12 @@ CREATE TABLE IF NOT EXISTS markdown_entries (
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	title TEXT NOT NULL,
 	file_path TEXT NOT NULL,
+	is_public BOOLEAN NOT NULL DEFAULT FALSE,
 	uploaded_at TIMESTAMPTZ NOT NULL
 );
+
+ALTER TABLE markdown_entries
+	ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS webauthn_credentials (
 	credential_id TEXT PRIMARY KEY,
@@ -191,6 +212,18 @@ CREATE TABLE IF NOT EXISTS tags (
 	created_at TIMESTAMPTZ NOT NULL,
 	updated_at TIMESTAMPTZ NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS site_settings (
+	id INT PRIMARY KEY,
+	name TEXT NOT NULL DEFAULT 'Polar-',
+	description TEXT NOT NULL DEFAULT '',
+	icon_url TEXT NOT NULL DEFAULT '',
+	updated_at TIMESTAMPTZ NOT NULL
+);
+
+INSERT INTO site_settings (id, name, description, icon_url, updated_at)
+VALUES (1, 'Polar-', '', '', NOW())
+ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS posts (
 	id BIGSERIAL PRIMARY KEY,
@@ -417,24 +450,26 @@ func (s *Server) createUser(user *User) error {
 	return nil
 }
 
-func (s *Server) createMarkdownEntry(userID, title, filePath string, uploadedAt time.Time) error {
+func (s *Server) createMarkdownEntry(userID, title, filePath string, isPublic bool, uploadedAt time.Time) error {
 	_, err := s.db.Exec(
-		`INSERT INTO markdown_entries (user_id, title, file_path, uploaded_at) VALUES ($1, $2, $3, $4)`,
+		`INSERT INTO markdown_entries (user_id, title, file_path, is_public, uploaded_at) VALUES ($1, $2, $3, $4, $5)`,
 		userID,
 		title,
 		filePath,
+		isPublic,
 		uploadedAt,
 	)
 	return err
 }
 
-func (s *Server) createMarkdownEntryReturningID(userID, title, filePath string, uploadedAt time.Time) (int64, error) {
+func (s *Server) createMarkdownEntryReturningID(userID, title, filePath string, isPublic bool, uploadedAt time.Time) (int64, error) {
 	var id int64
 	err := s.db.QueryRow(
-		`INSERT INTO markdown_entries (user_id, title, file_path, uploaded_at) VALUES ($1, $2, $3, $4) RETURNING id`,
+		`INSERT INTO markdown_entries (user_id, title, file_path, is_public, uploaded_at) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
 		userID,
 		title,
 		filePath,
+		isPublic,
 		uploadedAt,
 	).Scan(&id)
 	if err != nil {
@@ -509,7 +544,7 @@ func (s *Server) listMarkdownEntries(userID string, limit, offset int) ([]Markdo
 		offset = 0
 	}
 	rows, err := s.db.Query(
-		`SELECT id, user_id, title, file_path, uploaded_at
+		`SELECT id, user_id, title, file_path, is_public, uploaded_at
 		FROM markdown_entries
 		WHERE user_id = $1
 		ORDER BY uploaded_at DESC
@@ -526,7 +561,7 @@ func (s *Server) listMarkdownEntries(userID string, limit, offset int) ([]Markdo
 	entries := make([]MarkdownEntry, 0, limit+1)
 	for rows.Next() {
 		var entry MarkdownEntry
-		if err := rows.Scan(&entry.ID, &entry.UserID, &entry.Title, &entry.FilePath, &entry.UploadedAt); err != nil {
+		if err := rows.Scan(&entry.ID, &entry.UserID, &entry.Title, &entry.FilePath, &entry.IsPublic, &entry.UploadedAt); err != nil {
 			return nil, false, err
 		}
 		entries = append(entries, entry)
@@ -542,15 +577,123 @@ func (s *Server) listMarkdownEntries(userID string, limit, offset int) ([]Markdo
 	return entries, hasMore, nil
 }
 
-func (s *Server) getMarkdownEntry(userID string, id int64) (*MarkdownEntry, error) {
+func (s *Server) listPublicMarkdownEntries(limit, offset int) ([]PublicMarkdownEntry, bool, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := s.db.Query(
+		`SELECT m.id, m.user_id, u.username, u.icon_url, m.title, m.uploaded_at
+		   FROM markdown_entries m
+		   JOIN users u ON u.id = m.user_id
+		  WHERE m.is_public = TRUE
+		  ORDER BY m.uploaded_at DESC
+		  LIMIT $1 OFFSET $2`,
+		limit+1,
+		offset,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	entries := make([]PublicMarkdownEntry, 0, limit+1)
+	for rows.Next() {
+		var entry PublicMarkdownEntry
+		if err := rows.Scan(&entry.ID, &entry.UserID, &entry.Username, &entry.UserIcon, &entry.Title, &entry.UploadedAt); err != nil {
+			return nil, false, err
+		}
+		entries = append(entries, entry)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+
+	hasMore := false
+	if len(entries) > limit {
+		hasMore = true
+		entries = entries[:limit]
+	}
+	return entries, hasMore, nil
+}
+
+func (s *Server) getSiteSettings() (*SiteSettings, error) {
+	var settings SiteSettings
+	err := s.db.QueryRow(
+		`SELECT name, description, icon_url, updated_at
+		 FROM site_settings
+		 WHERE id = 1`,
+	).Scan(&settings.Name, &settings.Description, &settings.IconURL, &settings.UpdatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return &SiteSettings{
+				Name:        "Polar-",
+				Description: "",
+				IconURL:     "",
+				UpdatedAt:   time.Now(),
+			}, nil
+		}
+		return nil, err
+	}
+	return &settings, nil
+}
+
+func (s *Server) updateSiteSettings(name, description string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO site_settings (id, name, description, icon_url, updated_at)
+		 VALUES (1, $1, $2, COALESCE((SELECT icon_url FROM site_settings WHERE id = 1), ''), NOW())
+		 ON CONFLICT (id)
+		 DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, updated_at = NOW()`,
+		name,
+		description,
+	)
+	return err
+}
+
+func (s *Server) updateSiteIcon(iconURL string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO site_settings (id, name, description, icon_url, updated_at)
+		 VALUES (1, COALESCE((SELECT name FROM site_settings WHERE id = 1), 'Polar-'),
+		             COALESCE((SELECT description FROM site_settings WHERE id = 1), ''),
+		             $1,
+		             NOW())
+		 ON CONFLICT (id)
+		 DO UPDATE SET icon_url = EXCLUDED.icon_url, updated_at = NOW()`,
+		iconURL,
+	)
+	return err
+}
+
+func (s *Server) getMarkdownEntryForUser(viewerUserID string, id int64) (*MarkdownEntry, bool, error) {
 	var entry MarkdownEntry
 	err := s.db.QueryRow(
-		`SELECT id, user_id, title, file_path, uploaded_at
+		`SELECT id, user_id, title, file_path, is_public, uploaded_at
+		FROM markdown_entries
+		WHERE id = $1 AND (user_id = $2 OR is_public = TRUE)`,
+		id,
+		viewerUserID,
+	).Scan(&entry.ID, &entry.UserID, &entry.Title, &entry.FilePath, &entry.IsPublic, &entry.UploadedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return &entry, entry.UserID == viewerUserID, nil
+}
+
+func (s *Server) getOwnedMarkdownEntry(userID string, id int64) (*MarkdownEntry, error) {
+	var entry MarkdownEntry
+	err := s.db.QueryRow(
+		`SELECT id, user_id, title, file_path, is_public, uploaded_at
 		FROM markdown_entries
 		WHERE user_id = $1 AND id = $2`,
 		userID,
 		id,
-	).Scan(&entry.ID, &entry.UserID, &entry.Title, &entry.FilePath, &entry.UploadedAt)
+	).Scan(&entry.ID, &entry.UserID, &entry.Title, &entry.FilePath, &entry.IsPublic, &entry.UploadedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -560,11 +703,12 @@ func (s *Server) getMarkdownEntry(userID string, id int64) (*MarkdownEntry, erro
 	return &entry, nil
 }
 
-func (s *Server) updateMarkdownEntry(userID string, id int64, title, filePath string) error {
+func (s *Server) updateMarkdownEntry(userID string, id int64, title, filePath string, isPublic bool) error {
 	_, err := s.db.Exec(
-		`UPDATE markdown_entries SET title = $1, file_path = $2 WHERE user_id = $3 AND id = $4`,
+		`UPDATE markdown_entries SET title = $1, file_path = $2, is_public = $3 WHERE user_id = $4 AND id = $5`,
 		title,
 		filePath,
+		isPublic,
 		userID,
 		id,
 	)

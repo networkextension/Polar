@@ -14,8 +14,9 @@ import (
 
 func (s *Server) handleMarkdownSubmit(c *gin.Context) {
 	var req struct {
-		Title   string `json:"title" binding:"required"`
-		Content string `json:"content" binding:"required"`
+		Title    string `json:"title" binding:"required"`
+		Content  string `json:"content" binding:"required"`
+		IsPublic bool   `json:"is_public"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -54,7 +55,7 @@ func (s *Server) handleMarkdownSubmit(c *gin.Context) {
 		return
 	}
 
-	entryID, err := s.createMarkdownEntryReturningID(userIDStr, req.Title, path, now)
+	entryID, err := s.createMarkdownEntryReturningID(userIDStr, req.Title, path, req.IsPublic, now)
 	if err != nil {
 		_ = os.Remove(path)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
@@ -62,10 +63,11 @@ func (s *Server) handleMarkdownSubmit(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message":  "保存成功",
-		"id":       entryID,
-		"file":     path,
-		"username": username,
+		"message":   "保存成功",
+		"id":        entryID,
+		"file":      path,
+		"username":  username,
+		"is_public": req.IsPublic,
 	})
 }
 
@@ -111,6 +113,41 @@ func (s *Server) handleMarkdownList(c *gin.Context) {
 	})
 }
 
+func (s *Server) handlePublicMarkdownList(c *gin.Context) {
+	limit := 0
+	if limitStr := c.Query("limit"); limitStr != "" {
+		parsed, err := strconv.Atoi(limitStr)
+		if err != nil || parsed <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
+			return
+		}
+		limit = parsed
+	}
+
+	offset := 0
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		parsed, err := strconv.Atoi(offsetStr)
+		if err != nil || parsed < 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
+			return
+		}
+		offset = parsed
+	}
+
+	entries, hasMore, err := s.listPublicMarkdownEntries(limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	nextOffset := offset + len(entries)
+	c.JSON(http.StatusOK, gin.H{
+		"entries":     entries,
+		"has_more":    hasMore,
+		"next_offset": nextOffset,
+	})
+}
+
 func (s *Server) handleMarkdownRead(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	userIDStr, ok := userID.(string)
@@ -125,7 +162,7 @@ func (s *Server) handleMarkdownRead(c *gin.Context) {
 		return
 	}
 
-	entry, err := s.getMarkdownEntry(userIDStr, entryID)
+	entry, canEdit, err := s.getMarkdownEntryForUser(userIDStr, entryID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
@@ -142,8 +179,9 @@ func (s *Server) handleMarkdownRead(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"entry":   entry,
-		"content": string(content),
+		"entry":    entry,
+		"content":  string(content),
+		"can_edit": canEdit,
 	})
 }
 
@@ -162,8 +200,9 @@ func (s *Server) handleMarkdownUpdate(c *gin.Context) {
 	}
 
 	var req struct {
-		Title   string `json:"title" binding:"required"`
-		Content string `json:"content" binding:"required"`
+		Title    string `json:"title" binding:"required"`
+		Content  string `json:"content" binding:"required"`
+		IsPublic bool   `json:"is_public"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -171,7 +210,7 @@ func (s *Server) handleMarkdownUpdate(c *gin.Context) {
 		return
 	}
 
-	entry, err := s.getMarkdownEntry(userIDStr, entryID)
+	entry, err := s.getOwnedMarkdownEntry(userIDStr, entryID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
@@ -191,14 +230,15 @@ func (s *Server) handleMarkdownUpdate(c *gin.Context) {
 		return
 	}
 
-	if err := s.updateMarkdownEntry(userIDStr, entryID, req.Title, entry.FilePath); err != nil {
+	if err := s.updateMarkdownEntry(userIDStr, entryID, req.Title, entry.FilePath, req.IsPublic); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "更新成功",
-		"id":      entryID,
+		"message":   "更新成功",
+		"id":        entryID,
+		"is_public": req.IsPublic,
 	})
 }
 
@@ -216,7 +256,7 @@ func (s *Server) handleMarkdownDelete(c *gin.Context) {
 		return
 	}
 
-	entry, err := s.getMarkdownEntry(userIDStr, entryID)
+	entry, err := s.getOwnedMarkdownEntry(userIDStr, entryID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
@@ -233,4 +273,41 @@ func (s *Server) handleMarkdownDelete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+func (s *Server) handlePublicMarkdownRead(c *gin.Context) {
+	entryID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || entryID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
+		return
+	}
+
+	viewerUserID := ""
+	if sessionID, err := c.Cookie(SessionCookieName); err == nil {
+		if session := s.getSession(sessionID); session != nil {
+			viewerUserID = session.UserID
+		}
+	}
+
+	entry, _, err := s.getMarkdownEntryForUser(viewerUserID, entryID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if entry == nil || (!entry.IsPublic && entry.UserID != viewerUserID) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "未找到记录"})
+		return
+	}
+
+	content, err := os.ReadFile(entry.FilePath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "文件不存在"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"entry":    entry,
+		"content":  string(content),
+		"can_edit": false,
+	})
 }

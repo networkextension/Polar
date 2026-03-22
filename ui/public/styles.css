@@ -44,6 +44,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -54,6 +58,67 @@ body {
   align-items: flex-start;
   justify-content: flex-start;
   padding: 12px;
+}
+
+body.site-shell {
+  display: block;
+  padding: 18px 12px 28px;
+}
+
+.page-shell-wide,
+.page-shell-narrow {
+  width: 100%;
+  margin: 0 auto;
+}
+
+.page-shell-wide {
+  max-width: 1480px;
+}
+
+.page-shell-narrow {
+  max-width: 420px;
+}
+
+.site-brand-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  text-decoration: none;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: 0 16px 36px rgba(2, 6, 23, 0.2);
+}
+
+.site-brand-icon {
+  width: 58px;
+  height: 58px;
+  border-radius: 16px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: rgba(56, 189, 248, 0.14);
+  flex-shrink: 0;
+}
+
+.site-brand-copy {
+  min-width: 0;
+}
+
+.site-brand-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.site-brand-description {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
 }
 
 .card {
@@ -226,6 +291,118 @@ button:hover {
 .drawer-main {
   min-width: 0;
   min-height: 65vh;
+}
+
+.site-admin-panel {
+  display: grid;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.site-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.site-identity-card,
+.site-tags-section {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-strong);
+  padding: 16px;
+}
+
+.site-icon {
+  width: 96px;
+  height: 96px;
+  border-radius: 24px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: rgba(56, 189, 248, 0.15);
+}
+
+.site-icon-tools {
+  margin-top: 14px;
+}
+
+.site-settings-form {
+  display: grid;
+  gap: 10px;
+}
+
+.site-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.site-tags-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tag-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.tag-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.tag-item-empty {
+  color: var(--muted);
+  justify-content: center;
+}
+
+.tag-item-main {
+  min-width: 0;
+}
+
+.tag-item-header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--badge-bg);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.tag-item-meta,
+.tag-item-desc {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.tag-item-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .drawer-header {
@@ -478,6 +655,30 @@ button:hover {
   margin-top: 12px;
 }
 
+.markdown-list {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.markdown-card {
+  display: grid;
+  gap: 12px;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.markdown-card-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.markdown-card-meta {
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .post-card {
   display: grid;
   gap: 12px;
@@ -646,6 +847,10 @@ button:hover {
 }
 
 .list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 10px 12px;
   border-radius: 10px;
   margin-bottom: 8px;
@@ -714,6 +919,14 @@ button:hover {
   word-break: break-word;
 }
 
+.content-box img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 12px auto;
+  border-radius: 12px;
+}
+
 .toolbar {
   display: flex;
   gap: 12px;
@@ -750,6 +963,10 @@ textarea {
     align-items: stretch;
     justify-content: flex-start;
     padding: 0;
+  }
+
+  body.site-shell {
+    padding: 14px;
   }
 
   .dashboard {
@@ -820,6 +1037,24 @@ textarea {
 
   .content-box {
     min-height: 280px;
+  }
+
+  .site-brand-banner {
+    align-items: flex-start;
+  }
+
+  .site-admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .site-tags-header,
+  .tag-item {
+    flex-direction: column;
+  }
+
+  .tag-item-actions {
+    width: 100%;
+    justify-content: stretch;
   }
 }
 

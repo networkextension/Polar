@@ -71,7 +71,125 @@
 {
   "user_id": "xxxx",
   "username": "johndoe",
-  "role": "admin"
+  "role": "admin",
+  "icon_url": "/uploads/icon_user_xxx.png"
+}
+```
+
+## 登录记录
+
+**GET** `/api/login-history?limit=5`
+
+权限要求：已登录用户
+
+成功响应：
+```json
+{
+  "records": [
+    {
+      "id": 1,
+      "user_id": "u123",
+      "ip_address": "127.0.0.1",
+      "country": "China",
+      "region": "Shanghai",
+      "city": "Shanghai",
+      "login_method": "password",
+      "logged_in_at": "2026-03-22T08:00:00Z"
+    }
+  ]
+}
+```
+
+## 用户头像
+
+### 上传当前用户头像
+
+**POST** `/api/user/icon`
+
+权限要求：已登录用户
+
+请求类型：`multipart/form-data`
+
+字段：
+- `icon`：图片文件，建议不超过 2MB
+
+成功响应：
+```json
+{
+  "message": "更新成功",
+  "icon_url": "/uploads/icon_u123_20260322.png"
+}
+```
+
+## 站点设置
+
+### 获取站点设置
+
+**GET** `/api/site-settings`
+
+说明：公开接口，登录前后都可读取。
+
+成功响应：
+```json
+{
+  "site": {
+    "name": "Polar-",
+    "description": "AI-assisted product prototyping workspace",
+    "icon_url": "/uploads/site_icon_20260322.png",
+    "updated_at": "2026-03-22T08:00:00Z"
+  }
+}
+```
+
+### 更新站点设置（仅管理员）
+
+**PUT** `/api/site-settings`
+
+权限要求：管理员
+
+请求体：
+```json
+{
+  "name": "Polar-",
+  "description": "AI-assisted product prototyping workspace"
+}
+```
+
+成功响应：
+```json
+{
+  "message": "保存成功",
+  "site": {
+    "name": "Polar-",
+    "description": "AI-assisted product prototyping workspace",
+    "icon_url": "/uploads/site_icon_20260322.png",
+    "updated_at": "2026-03-22T08:00:00Z"
+  }
+}
+```
+
+### 上传站点图标（仅管理员）
+
+**POST** `/api/site-settings/icon`
+
+权限要求：管理员
+
+请求类型：`multipart/form-data`
+
+字段：
+- `icon`：图片文件，建议不超过 2MB
+
+成功响应：
+```json
+{
+  "message": "更新成功",
+  "icon_url": "/uploads/site_icon_20260322.png",
+  "site": {
+    "name": "Polar-",
+    "description": "AI-assisted product prototyping workspace",
+    "icon_url": "/uploads/site_icon_20260322.png",
+    "updated_at": "2026-03-22T08:00:00Z"
+  }
 }
 ```
 
@@ -374,7 +492,8 @@
 ```json
 {
   "title": "Demo Note",
-  "content": "# 标题\\n\\n正文内容"
+  "content": "# 标题\\n\\n正文内容",
+  "is_public": true
 }
 ```
 
@@ -384,7 +503,8 @@
   "message": "保存成功",
   "id": 1,
   "file": "data/markdown/xxx.md",
-  "username": "johndoe"
+  "username": "johndoe",
+  "is_public": true
 }
 ```
 
@@ -401,6 +521,7 @@
       "user_id": "xxxx",
       "title": "Demo Note",
       "file_path": "data/markdown/xxx.md",
+      "is_public": true,
       "uploaded_at": "2026-03-18T00:00:00Z"
     }
   ],
@@ -413,6 +534,9 @@
 
 **GET** `/api/markdown/:id`
 
+权限要求：已登录用户  
+说明：作者始终可读；如果文档设置为 `is_public=true`，其他已登录用户也可读。
+
 成功响应：
 ```json
 {
@@ -421,9 +545,11 @@
     "user_id": "xxxx",
     "title": "Demo Note",
     "file_path": "data/markdown/xxx.md",
+    "is_public": true,
     "uploaded_at": "2026-03-18T00:00:00Z"
   },
-  "content": "# 标题\\n\\n正文内容"
+  "content": "# 标题\\n\\n正文内容",
+  "can_edit": false
 }
 ```
 
@@ -435,7 +561,8 @@
 ```json
 {
   "title": "新标题",
-  "content": "# 新标题\\n\\n更新内容"
+  "content": "# 新标题\\n\\n更新内容",
+  "is_public": false
 }
 ```
 
@@ -443,7 +570,8 @@
 ```json
 {
   "message": "更新成功",
-  "id": 1
+  "id": 1,
+  "is_public": false
 }
 ```
 
@@ -455,5 +583,55 @@
 ```json
 {
   "message": "删除成功"
+}
+```
+
+## 公开 Markdown
+
+### 分页获取公开 Markdown 列表
+
+**GET** `/api/public/markdowns?limit=10&offset=0`
+
+说明：公开接口，返回所有 `is_public=true` 的 Markdown。
+
+成功响应：
+```json
+{
+  "entries": [
+    {
+      "id": 12,
+      "user_id": "u123",
+      "username": "johndoe",
+      "user_icon": "/uploads/icon_u123.png",
+      "title": "Demo Note",
+      "uploaded_at": "2026-03-22T08:00:00Z"
+    }
+  ],
+  "has_more": false,
+  "next_offset": 1
+}
+```
+
+### 读取公开 Markdown 详情
+
+**GET** `/api/public/markdown/:id`
+
+说明：
+- 文档公开时，任何用户都可访问
+- 如果当前请求携带有效登录态且该用户是文档作者，也可访问自己的非公开文档
+
+成功响应：
+```json
+{
+  "entry": {
+    "id": 12,
+    "user_id": "u123",
+    "title": "Demo Note",
+    "file_path": "data/markdown/demo_note.md",
+    "is_public": true,
+    "uploaded_at": "2026-03-22T08:00:00Z"
+  },
+  "content": "# Demo Note\\n\\n正文内容",
+  "can_edit": false
 }
 ```

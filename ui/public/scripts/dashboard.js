@@ -1,9 +1,10 @@
-import { beginPasskeyRegistration, createTag, deleteEntry, fetchEntries, fetchEntry, fetchLoginHistory, finishPasskeyRegistration, uploadUserIcon, } from "./api/dashboard.js";
+import { beginPasskeyRegistration, createTag, deleteEntry, fetchEntries, fetchEntry, fetchLoginHistory, fetchSiteSettings, fetchTags, finishPasskeyRegistration, removeTag, updateSiteSettings, updateTag, uploadSiteIcon, uploadUserIcon, } from "./api/dashboard.js";
 import { fetchCurrentUser, logout } from "./api/session.js";
 import { makeDefaultAvatar } from "./lib/avatar.js";
 import { byId, query } from "./lib/dom.js";
 import { renderMarkdown } from "./lib/marked.js";
 import { base64URLToBuffer, credentialToJSON } from "./lib/passkey.js";
+import { hydrateSiteBrand, renderSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme, applyTheme } from "./lib/theme.js";
 const welcomeText = byId("welcomeText");
 const entryList = byId("entryList");
@@ -33,6 +34,7 @@ const groupName = byId("groupName");
 const groupMeta = byId("groupMeta");
 const addTagBtn = byId("addTagBtn");
 const tagModal = byId("tagModal");
+const tagModalTitle = byId("tagModalTitle");
 const tagModalCloseBtn = byId("tagModalCloseBtn");
 const tagForm = byId("tagForm");
 const tagName = byId("tagName");
@@ -41,6 +43,15 @@ const tagDesc = byId("tagDesc");
 const tagOrder = byId("tagOrder");
 const tagFormStatus = byId("tagFormStatus");
 const tagSubmitBtn = byId("tagSubmitBtn");
+const siteAdminPanel = byId("siteAdminPanel");
+const siteNameInput = byId("siteNameInput");
+const siteDescriptionInput = byId("siteDescriptionInput");
+const saveSiteBtn = byId("saveSiteBtn");
+const siteStatus = byId("siteStatus");
+const siteIconPreview = byId("siteIconPreview");
+const siteIconFile = byId("siteIconFile");
+const siteAddTagBtnProxy = byId("siteAddTagBtnProxy");
+const tagList = byId("tagList");
 const iconCtx = iconCanvas.getContext("2d");
 let nextOffset = 0;
 let hasMore = true;
@@ -53,6 +64,9 @@ let offsetY = 0;
 let dragging = false;
 let dragStartX = 0;
 let dragStartY = 0;
+let isAdmin = false;
+let editingTagId = null;
+let currentTags = [];
 function isMobileLayout() {
     return window.innerWidth <= 860;
 }
@@ -86,6 +100,40 @@ function formatLoginMethod(method) {
     }
     return "密码";
 }
+function defaultSiteIcon(name) {
+    return makeDefaultAvatar(name || "站", 160);
+}
+function renderSiteSettings(site) {
+    const safeSite = site || { name: "Polar-", description: "", icon_url: "" };
+    siteNameInput.value = safeSite.name || "Polar-";
+    siteDescriptionInput.value = safeSite.description || "";
+    siteIconPreview.src = safeSite.icon_url || defaultSiteIcon(safeSite.name || "Polar-");
+    renderSiteBrand(safeSite);
+}
+function renderTagList(tags) {
+    if (!tags.length) {
+        tagList.innerHTML = `<li class="tag-item tag-item-empty">还没有 Tag，先创建第一个吧。</li>`;
+        return;
+    }
+    tagList.innerHTML = tags
+        .map((tag) => `
+        <li class="tag-item" data-tag-id="${tag.id}">
+          <div class="tag-item-main">
+            <div class="tag-item-header">
+              <strong>${tag.name}</strong>
+              <span class="tag-chip">${tag.slug}</span>
+            </div>
+            <div class="tag-item-meta">排序 ${tag.sort_order}</div>
+            <div class="tag-item-desc">${tag.description || "暂无描述"}</div>
+          </div>
+          <div class="tag-item-actions">
+            <button class="btn-inline btn-secondary" type="button" data-action="edit">编辑</button>
+            <button class="btn-inline" type="button" data-action="delete">删除</button>
+          </div>
+        </li>
+      `)
+        .join("");
+}
 async function loadLoginHistory() {
     const { response, data } = await fetchLoginHistory();
     if (!response.ok) {
@@ -116,12 +164,14 @@ async function loadProfile() {
         window.location.href = "/login.html";
         return;
     }
+    isAdmin = data.role === "admin";
     welcomeText.textContent = `你好，${data.username}`;
-    const isAdmin = data.role === "admin";
     groupName.textContent = isAdmin ? "管理用户组" : "普通用户组";
-    groupMeta.textContent = isAdmin ? "可管理标签与内容" : "基础浏览与发帖";
+    groupMeta.textContent = isAdmin ? "可管理站点信息、Tag 与内容" : "基础浏览与发帖";
     addTagBtn.disabled = !isAdmin;
-    addTagBtn.textContent = isAdmin ? "添加 Tag" : "仅管理员可添加";
+    addTagBtn.textContent = isAdmin ? "新建 Tag" : "仅管理员可新建 Tag";
+    addTagBtn.hidden = !isAdmin;
+    siteAdminPanel.hidden = !isAdmin;
     if (data.icon_url) {
         userIcon.src = data.icon_url;
     }
@@ -129,15 +179,41 @@ async function loadProfile() {
         userIcon.src = makeDefaultAvatar(data.username || "U", 160);
     }
 }
-function openTagModal() {
+async function loadSiteAdminData() {
+    if (!isAdmin) {
+        return;
+    }
+    const [siteResult, tagResult] = await Promise.all([fetchSiteSettings(), fetchTags()]);
+    if (siteResult.response.ok) {
+        renderSiteSettings(siteResult.data.site);
+    }
+    else {
+        siteStatus.textContent = siteResult.data.error || "无法加载站点信息";
+    }
+    if (tagResult.response.ok) {
+        currentTags = tagResult.data.tags || [];
+        renderTagList(currentTags);
+    }
+    else {
+        tagList.innerHTML = `<li class="tag-item tag-item-empty">无法加载 Tag 列表</li>`;
+    }
+}
+function openTagModal(tag) {
+    editingTagId = tag?.id || null;
     tagForm.reset();
-    tagOrder.value = "0";
+    tagOrder.value = String(tag?.sort_order ?? 0);
+    tagName.value = tag?.name || "";
+    tagSlug.value = tag?.slug || "";
+    tagDesc.value = tag?.description || "";
     tagFormStatus.textContent = "";
+    tagModalTitle.textContent = editingTagId ? "编辑 Tag" : "添加 Tag";
+    tagSubmitBtn.textContent = editingTagId ? "保存" : "创建";
     tagModal.classList.add("open");
     tagModal.setAttribute("aria-hidden", "false");
     tagName.focus();
 }
 function closeTagModal() {
+    editingTagId = null;
     tagModal.classList.remove("open");
     tagModal.setAttribute("aria-hidden", "true");
 }
@@ -165,7 +241,9 @@ async function loadEntries(reset = false) {
     entries.forEach((entry) => {
         const li = document.createElement("li");
         li.dataset.entryId = String(entry.id);
-        li.textContent = entry.title;
+        li.innerHTML = entry.is_public
+            ? `<span>${entry.title}</span><span class="tag-chip">Public</span>`
+            : `<span>${entry.title}</span>`;
         li.addEventListener("click", () => {
             void loadEntry(entry.id);
         });
@@ -185,6 +263,8 @@ async function loadEntry(id) {
     setActiveEntryItem();
     const rawContent = data.content || "空内容";
     entryContent.innerHTML = renderMarkdown(rawContent);
+    editBtn.disabled = data.can_edit === false;
+    deleteBtn.disabled = data.can_edit === false;
     if (isMobileLayout()) {
         setDrawerOpen(false);
     }
@@ -227,11 +307,17 @@ addTagBtn.addEventListener("click", () => {
     }
     openTagModal();
 });
+siteAddTagBtnProxy.addEventListener("click", () => {
+    if (!isAdmin) {
+        return;
+    }
+    openTagModal();
+});
 tagModalCloseBtn.addEventListener("click", closeTagModal);
 query(tagModal, ".modal-backdrop").addEventListener("click", closeTagModal);
 tagForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    tagFormStatus.textContent = "正在创建...";
+    tagFormStatus.textContent = editingTagId ? "正在保存..." : "正在创建...";
     tagSubmitBtn.disabled = true;
     const payload = {
         name: tagName.value.trim(),
@@ -240,21 +326,107 @@ tagForm.addEventListener("submit", async (event) => {
         sort_order: Number(tagOrder.value || 0),
     };
     try {
-        const { response, data } = await createTag(payload);
+        const { response, data } = editingTagId
+            ? await updateTag(editingTagId, payload)
+            : await createTag(payload);
         if (!response.ok) {
-            tagFormStatus.textContent = data.error || "创建失败";
+            tagFormStatus.textContent = data.error || "保存失败";
             return;
         }
-        tagFormStatus.textContent = "创建成功";
+        tagFormStatus.textContent = editingTagId ? "保存成功" : "创建成功";
+        await loadSiteAdminData();
         window.setTimeout(() => {
             closeTagModal();
-        }, 600);
+        }, 400);
     }
     catch {
-        tagFormStatus.textContent = "创建失败，请重试";
+        tagFormStatus.textContent = "保存失败，请重试";
     }
     finally {
         tagSubmitBtn.disabled = false;
+    }
+});
+tagList.addEventListener("click", async (event) => {
+    const target = event.target;
+    const button = target.closest("button[data-action]");
+    if (!button) {
+        return;
+    }
+    const item = button.closest("[data-tag-id]");
+    const tagId = Number(item?.dataset.tagId || 0);
+    const tag = currentTags.find((entry) => entry.id === tagId);
+    if (!tag) {
+        return;
+    }
+    const action = button.dataset.action;
+    if (action === "edit") {
+        openTagModal(tag);
+        return;
+    }
+    if (action === "delete") {
+        if (!window.confirm(`确定删除 Tag “${tag.name}” 吗？`)) {
+            return;
+        }
+        const { response, data } = await removeTag(tag.id);
+        if (!response.ok) {
+            siteStatus.textContent = data.error || "删除失败";
+            return;
+        }
+        siteStatus.textContent = `已删除 Tag：${tag.name}`;
+        await loadSiteAdminData();
+    }
+});
+saveSiteBtn.addEventListener("click", async () => {
+    siteStatus.textContent = "正在保存站点信息...";
+    saveSiteBtn.disabled = true;
+    try {
+        const { response, data } = await updateSiteSettings({
+            name: siteNameInput.value.trim(),
+            description: siteDescriptionInput.value.trim(),
+            icon_url: siteIconPreview.src,
+        });
+        if (!response.ok) {
+            siteStatus.textContent = data.error || "保存失败";
+            return;
+        }
+        renderSiteSettings(data.site);
+        siteStatus.textContent = "站点信息已保存";
+    }
+    catch {
+        siteStatus.textContent = "网络错误，请重试";
+    }
+    finally {
+        saveSiteBtn.disabled = false;
+    }
+});
+siteIconFile.addEventListener("change", async () => {
+    const file = siteIconFile.files?.[0];
+    if (!file) {
+        return;
+    }
+    if (!file.type.startsWith("image/")) {
+        siteStatus.textContent = "请选择图片文件";
+        siteIconFile.value = "";
+        return;
+    }
+    siteStatus.textContent = "正在上传站点图标...";
+    const formData = new FormData();
+    formData.append("icon", file);
+    try {
+        const { response, data } = await uploadSiteIcon(formData);
+        if (!response.ok) {
+            siteStatus.textContent = data.error || "上传失败";
+            return;
+        }
+        renderSiteSettings(data.site);
+        siteIconPreview.src = `${data.icon_url || data.site?.icon_url || ""}?v=${Date.now()}`;
+        siteStatus.textContent = "站点图标已更新";
+    }
+    catch {
+        siteStatus.textContent = "网络错误，请重试";
+    }
+    finally {
+        siteIconFile.value = "";
     }
 });
 logoutBtn.addEventListener("click", async () => {
@@ -432,6 +604,8 @@ passkeyRegisterBtn.addEventListener("click", async () => {
 const initialTheme = initStoredTheme();
 syncThemeButton(initialTheme);
 bindThemeSync(syncThemeButton);
-void loadProfile();
-void loadEntries(true);
-void loadLoginHistory();
+void (async () => {
+    await hydrateSiteBrand();
+    await loadProfile();
+    await Promise.all([loadEntries(true), loadLoginHistory(), loadSiteAdminData()]);
+})();

@@ -1,5 +1,6 @@
 import { byId } from "./lib/dom.js";
 import { base64URLToBuffer, credentialToJSON } from "./lib/passkey.js";
+import { hydrateSiteBrand } from "./lib/site.js";
 const API_BASE = "";
 const form = byId("loginForm");
 const alertBox = byId("alert");
@@ -109,3 +110,4 @@ async function redirectIfLoggedIn() {
     }
 }
 void redirectIfLoggedIn();
+void hydrateSiteBrand();

@@ -1,5 +1,6 @@
 import { buildAssetUrl, resolveAvatar } from "./lib/avatar.js";
 import { byId, query } from "./lib/dom.js";
+import { hydrateSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme } from "./lib/theme.js";
 
 const API_BASE = "";
@@ -361,6 +362,7 @@ postForm.addEventListener("submit", async (event) => {
 });
 
 async function init(): Promise<void> {
+  await hydrateSiteBrand();
   await loadProfile();
   await loadPost();
 }

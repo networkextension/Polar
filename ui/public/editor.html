@@ -8,8 +8,17 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
-    <div class="dashboard">
+  <body class="site-shell">
+    <div class="page-shell-wide">
+      <a class="site-brand-banner" href="/dashboard.html" data-site-brand>
+        <img class="site-brand-icon" data-site-icon alt="站点图标" />
+        <div class="site-brand-copy">
+          <div class="site-brand-name" data-site-name>Polar-</div>
+          <div class="site-brand-description" data-site-description>正在加载站点信息...</div>
+        </div>
+      </a>
+
+      <div class="dashboard">
       <div class="dashboard-header">
         <div>
           <h1>Markdown 编辑器</h1>
@@ -25,6 +34,13 @@
           <input id="titleInput" type="text" placeholder="标题" />
           <button id="saveBtn" class="btn-inline" type="button">保存</button>
         </div>
+        <div class="editor-options">
+          <label class="checkbox-label" for="publicToggle">
+            <input id="publicToggle" type="checkbox" />
+            <span>公开可见（其他用户可查看，但不能编辑）</span>
+          </label>
+          <div id="publicHint" class="status-text">默认仅自己可见。</div>
+        </div>
         <div class="grid">
           <div>
             <textarea id="contentInput" placeholder="在这里输入 Markdown 内容..."></textarea>
@@ -34,6 +50,7 @@
             <div id="preview" class="content-box">暂无内容</div>
           </div>
         </div>
+      </div>
       </div>
     </div>
 

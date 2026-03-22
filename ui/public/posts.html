@@ -8,8 +8,17 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
-    <div class="posts-page">
+  <body class="site-shell">
+    <div class="page-shell-wide">
+      <a class="site-brand-banner" href="/dashboard.html" data-site-brand>
+        <img class="site-brand-icon" data-site-icon alt="站点图标" />
+        <div class="site-brand-copy">
+          <div class="site-brand-name" data-site-name>Polar-</div>
+          <div class="site-brand-description" data-site-description>正在加载站点信息...</div>
+        </div>
+      </a>
+
+      <div class="posts-page">
       <div class="dashboard-header">
         <div>
           <h1>帖子广场</h1>
@@ -17,6 +26,7 @@
         </div>
         <div class="header-actions">
           <a class="btn-inline btn-secondary" href="/dashboard.html">返回控制台</a>
+          <a class="btn-inline btn-secondary" href="/markdowns.html">公开 Markdown</a>
           <a class="btn-inline btn-secondary" href="/post.html">发帖</a>
         </div>
       </div>
@@ -25,6 +35,7 @@
         <div class="badge">最新帖子</div>
         <div id="postList" class="post-list"></div>
         <button id="postLoadMoreBtn" class="btn-inline btn-secondary" type="button">加载更多</button>
+      </div>
       </div>
     </div>
 

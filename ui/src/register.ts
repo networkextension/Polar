@@ -1,4 +1,5 @@
 import { byId } from "./lib/dom.js";
+import { hydrateSiteBrand } from "./lib/site.js";
 
 const API_BASE = "";
 const form = byId<HTMLFormElement>("registerForm");
@@ -60,3 +61,4 @@ async function redirectIfLoggedIn(): Promise<void> {
 }
 
 void redirectIfLoggedIn();
+void hydrateSiteBrand();

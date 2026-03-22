@@ -8,21 +8,31 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
-    <div class="card">
-      <h1>创建账户</h1>
-      <p>快速注册并开始体验</p>
-      <div id="alert" class="alert"></div>
-      <form id="registerForm">
-        <label for="username">用户名</label>
-        <input id="username" name="username" type="text" required minlength="3" placeholder="johndoe" />
-        <label for="email">邮箱</label>
-        <input id="email" name="email" type="email" required placeholder="you@example.com" />
-        <label for="password">密码</label>
-        <input id="password" name="password" type="password" required minlength="6" placeholder="至少6位" />
-        <button type="submit">注册</button>
-      </form>
-      <a class="link" href="/login.html">已有账户？去登录</a>
+  <body class="site-shell">
+    <div class="page-shell-narrow">
+      <a class="site-brand-banner" href="/" data-site-brand>
+        <img class="site-brand-icon" data-site-icon alt="站点图标" />
+        <div class="site-brand-copy">
+          <div class="site-brand-name" data-site-name>Polar-</div>
+          <div class="site-brand-description" data-site-description>正在加载站点信息...</div>
+        </div>
+      </a>
+
+      <div class="card">
+        <h1>创建账户</h1>
+        <p>快速注册并开始体验</p>
+        <div id="alert" class="alert"></div>
+        <form id="registerForm">
+          <label for="username">用户名</label>
+          <input id="username" name="username" type="text" required minlength="3" placeholder="johndoe" />
+          <label for="email">邮箱</label>
+          <input id="email" name="email" type="email" required placeholder="you@example.com" />
+          <label for="password">密码</label>
+          <input id="password" name="password" type="password" required minlength="6" placeholder="至少6位" />
+          <button type="submit">注册</button>
+        </form>
+        <a class="link" href="/login.html">已有账户？去登录</a>
+      </div>
     </div>
 
     <script type="module" src="/scripts/register.js"></script>

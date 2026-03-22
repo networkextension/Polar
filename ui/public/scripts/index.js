@@ -1,4 +1,5 @@
 import { byId } from "./lib/dom.js";
+import { hydrateSiteBrand } from "./lib/site.js";
 const statusText = byId("statusText");
 async function bootstrap() {
     try {
@@ -14,3 +15,4 @@ async function bootstrap() {
     statusText.textContent = "请选择操作";
 }
 void bootstrap();
+void hydrateSiteBrand();

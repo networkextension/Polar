@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Auth UI</title>
+    <title>公开 Markdown</title>
     <link rel="icon" type="image/svg+xml" href="/assets/polaris-logo.svg" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body class="site-shell">
-    <div class="page-shell-narrow">
+    <div class="page-shell-wide">
       <a class="site-brand-banner" href="/" data-site-brand>
         <img class="site-brand-icon" data-site-icon alt="站点图标" />
         <div class="site-brand-copy">
@@ -18,15 +18,21 @@
         </div>
       </a>
 
-      <div class="card">
-        <h1>Gin Auth UI</h1>
-        <p id="statusText">正在检查登录状态...</p>
-        <a class="link" href="/login.html">登录</a>
-        <a class="link" href="/register.html">注册</a>
-        <a class="link" href="/editor.html">新建 Markdown</a>
+      <div class="dashboard">
+        <div class="dashboard-header">
+          <div>
+            <h1 id="markdownTitle">公开 Markdown</h1>
+            <p id="markdownMeta">只读预览</p>
+          </div>
+          <a class="btn-inline btn-secondary" href="/login.html">登录后编辑自己的文档</a>
+        </div>
+
+        <div id="markdownAlert" class="alert"></div>
+        <div id="markdownContent" class="panel content-box">正在加载内容...</div>
       </div>
     </div>
 
-    <script type="module" src="/scripts/index.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script type="module" src="/scripts/markdown.js"></script>
   </body>
 </html>

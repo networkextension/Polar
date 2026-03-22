@@ -6,6 +6,9 @@ import type {
   IconUploadResponse,
   LoginHistoryResponse,
   PasskeyBeginResponse,
+  SiteSettings,
+  SiteSettingsResponse,
+  TagListResponse,
   TagPayload,
 } from "../types/dashboard.js";
 
@@ -25,6 +28,41 @@ export async function createTag(payload: TagPayload) {
   return requestJson<ErrorResponse>("/api/tags", {
     method: "POST",
     body: payload,
+  });
+}
+
+export async function fetchTags(limit = 100, offset = 0) {
+  return requestJson<TagListResponse>(`/api/tags?limit=${limit}&offset=${offset}`);
+}
+
+export async function updateTag(id: number, payload: TagPayload) {
+  return requestJson<ErrorResponse>(`/api/tags/${id}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function removeTag(id: number) {
+  return requestJson<ErrorResponse>(`/api/tags/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function fetchSiteSettings() {
+  return requestJson<SiteSettingsResponse>("/api/site-settings");
+}
+
+export async function updateSiteSettings(payload: SiteSettings) {
+  return requestJson<SiteSettingsResponse>("/api/site-settings", {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function uploadSiteIcon(formData: FormData) {
+  return requestJson<IconUploadResponse>("/api/site-settings/icon", {
+    method: "POST",
+    body: formData,
   });
 }
 

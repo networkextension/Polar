@@ -2,6 +2,7 @@ import { fetchChats, fetchMessages, revokeMessage as revokeChatMessage, sendMess
 import { fetchCurrentUser } from "./api/session.js";
 import { resolveAvatar } from "./lib/avatar.js";
 import { byId } from "./lib/dom.js";
+import { hydrateSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme } from "./lib/theme.js";
 import type { ChatEventPayload, ChatMessage, ChatSummary } from "./types/chat.js";
 const chatWelcome = byId<HTMLElement>("chatWelcome");
@@ -300,6 +301,7 @@ chatRefreshBtn.addEventListener("click", async () => {
 });
 
 async function init(): Promise<void> {
+  await hydrateSiteBrand();
   await loadProfile();
   messageInput.disabled = true;
   connectWebSocket();

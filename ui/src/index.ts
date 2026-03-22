@@ -1,4 +1,5 @@
 import { byId } from "./lib/dom.js";
+import { hydrateSiteBrand } from "./lib/site.js";
 
 const statusText = byId<HTMLElement>("statusText");
 
@@ -17,3 +18,4 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap();
+void hydrateSiteBrand();

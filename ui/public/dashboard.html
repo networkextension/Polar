@@ -8,8 +8,17 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body>
-    <div class="dashboard">
+  <body class="site-shell">
+    <div class="page-shell-wide">
+      <a class="site-brand-banner" href="/dashboard.html" data-site-brand>
+        <img class="site-brand-icon" data-site-icon alt="站点图标" />
+        <div class="site-brand-copy">
+          <div class="site-brand-name" data-site-name>Polar-</div>
+          <div class="site-brand-description" data-site-description>正在加载站点信息...</div>
+        </div>
+      </a>
+
+      <div class="dashboard">
       <div class="dashboard-header">
         <div>
           <h1>控制台</h1>
@@ -18,6 +27,7 @@
         <div class="header-actions">
           <button id="drawerToggleBtn" class="btn-inline btn-secondary sidebar-toggle" type="button">记录列表</button>
           <button id="newEntryBtn" class="btn-inline btn-secondary" type="button">新建 Markdown</button>
+          <a class="btn-inline btn-secondary" href="/markdowns.html">公开 Markdown</a>
           <a class="btn-inline btn-secondary" href="/posts.html">帖子</a>
         </div>
       </div>
@@ -34,7 +44,7 @@
               <div class="badge">用户组</div>
               <div id="groupName" class="group-name">加载中...</div>
               <div id="groupMeta" class="group-meta"></div>
-              <button id="addTagBtn" class="btn-secondary group-action-btn" type="button">添加 Tag</button>
+              <button id="addTagBtn" class="btn-secondary group-action-btn" type="button" hidden>新建 Tag</button>
             </div>
             <ul id="entryList" class="list"></ul>
             <button id="loadMoreBtn" class="btn-inline btn-secondary" type="button">加载更多</button>
@@ -80,6 +90,43 @@
           </div>
         </aside>
         <div class="panel drawer-main">
+          <section id="siteAdminPanel" class="site-admin-panel" hidden>
+            <div class="badge">站点管理</div>
+            <div class="site-admin-grid">
+              <div class="site-identity-card">
+                <img id="siteIconPreview" class="site-icon" alt="站点图标" />
+                <div class="site-icon-tools">
+                  <label class="form-label" for="siteIconFile">站点图标</label>
+                  <input id="siteIconFile" class="input" type="file" accept="image/*" />
+                  <p class="drawer-help">建议使用方形图标，上传后会立即生效。</p>
+                </div>
+              </div>
+              <div class="site-settings-form">
+                <label class="form-label" for="siteNameInput">站点名称</label>
+                <input id="siteNameInput" class="input" type="text" maxlength="60" placeholder="输入站点名称" />
+
+                <label class="form-label" for="siteDescriptionInput">站点介绍</label>
+                <textarea id="siteDescriptionInput" class="input textarea" rows="4" maxlength="300" placeholder="一句话介绍你的站点"></textarea>
+
+                <div class="site-settings-actions">
+                  <button id="saveSiteBtn" class="btn-secondary" type="button">保存站点信息</button>
+                </div>
+                <div id="siteStatus" class="status-text"></div>
+              </div>
+            </div>
+
+            <div class="site-tags-section">
+              <div class="site-tags-header">
+                <div>
+                  <div class="badge">Tag 管理</div>
+                  <p class="drawer-help">可新增、编辑或删除站点内的内容标签。</p>
+                </div>
+                <button class="btn-inline btn-secondary" type="button" id="siteAddTagBtnProxy">新建 Tag</button>
+              </div>
+              <ul id="tagList" class="tag-list"></ul>
+            </div>
+          </section>
+
           <div class="badge">内容预览</div>
           <div id="entryContent" class="content-box">请选择侧边栏中的记录</div>
           <div class="toolbar" style="margin-top: 12px;">
@@ -87,6 +134,7 @@
             <button id="deleteBtn" class="btn-inline" type="button">删除</button>
           </div>
         </div>
+      </div>
       </div>
     </div>
 
