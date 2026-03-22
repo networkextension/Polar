@@ -124,21 +124,16 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            polar-${{ github.ref_name }}-freebsd-amd64.tar.gz
-            polar-${{ github.ref_name }}-freebsd-amd64.tar.gz.sha256
-            polar-${{ github.ref_name }}-linux-arm64.tar.gz
-            polar-${{ github.ref_name }}-linux-arm64.tar.gz.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload to existing Release
-        if: github.event_name == 'release'
+      - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ github.event_name == 'push' && github.ref_name || github.event.release.tag_name }}
           files: |
-            polar-${{ github.event.release.tag_name }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
-            polar-${{ github.event.release.tag_name }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
+            polar-${{ github.event_name == 'push' && github.ref_name || github.event.release.tag_name }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+            polar-${{ github.event_name == 'push' && github.ref_name || github.event.release.tag_name }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
