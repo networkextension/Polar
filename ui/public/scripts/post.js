@@ -211,6 +211,30 @@ function renderPost(post) {
       <div id="taskApplicantsPanel" class="task-applicants-panel"></div>
     `
         : "";
+    const taskResultSection = isTask && post.task.can_view_results
+        ? `
+      <div class="task-results-card">
+        <div class="badge">任务成果</div>
+        ${post.task.can_submit_result
+            ? `
+              <form id="taskResultForm" class="task-result-form">
+                <label class="form-label" for="taskResultNote">成果说明</label>
+                <textarea id="taskResultNote" class="input textarea" rows="3" placeholder="补充说明本次完成内容..."></textarea>
+                <label class="form-label" for="taskResultImages">成果图片</label>
+                <input id="taskResultImages" class="input" type="file" accept="image/*" multiple />
+                <label class="form-label" for="taskResultVideos">成果视频</label>
+                <input id="taskResultVideos" class="input" type="file" accept="video/*" multiple />
+                <div id="taskResultStatus" class="status-text"></div>
+                <div class="task-form-actions">
+                  <button id="taskResultSubmitBtn" class="btn-inline btn-secondary" type="submit">提交任务成果</button>
+                </div>
+              </form>
+            `
+            : ""}
+        <div id="taskResultList" class="task-result-list"></div>
+      </div>
+    `
+        : "";
     postDetail.innerHTML = `
     <div class="post-header">
       <div class="post-author">
@@ -230,6 +254,7 @@ function renderPost(post) {
       ${canDelete ? '<button id="detailDeleteBtn" class="btn-inline btn-secondary" type="button">删除帖子</button>' : ""}
     </div>
     ${taskActions}
+    ${taskResultSection}
     <div class="reply-box open">
       <div class="reply-list" id="replyList"></div>
       <form id="replyForm" class="reply-form">
@@ -275,6 +300,12 @@ function renderPost(post) {
     const taskCloseBtn = document.getElementById("taskCloseBtn");
     const taskLoadApplicantsBtn = document.getElementById("taskLoadApplicantsBtn");
     const taskApplicantsPanel = document.getElementById("taskApplicantsPanel");
+    const taskResultForm = document.getElementById("taskResultForm");
+    const taskResultNote = document.getElementById("taskResultNote");
+    const taskResultImages = document.getElementById("taskResultImages");
+    const taskResultVideos = document.getElementById("taskResultVideos");
+    const taskResultStatus = document.getElementById("taskResultStatus");
+    const taskResultSubmitBtn = document.getElementById("taskResultSubmitBtn");
     replyForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         const content = replyInput.value.trim();
@@ -378,6 +409,91 @@ function renderPost(post) {
             });
         });
     });
+    taskResultForm?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!taskResultStatus || !taskResultSubmitBtn || !taskResultImages || !taskResultVideos) {
+            return;
+        }
+        const formData = new FormData();
+        const note = taskResultNote?.value.trim() || "";
+        if (note) {
+            formData.append("note", note);
+        }
+        Array.from(taskResultImages.files || []).forEach((file) => formData.append("images", file));
+        Array.from(taskResultVideos.files || []).forEach((file) => formData.append("videos", file));
+        taskResultStatus.textContent = "正在提交任务成果...";
+        taskResultSubmitBtn.disabled = true;
+        const res = await fetch(`${API_BASE}/api/tasks/${post.id}/results`, {
+            method: "POST",
+            credentials: "include",
+            body: formData,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            taskResultStatus.textContent = data.error || "提交失败";
+            taskResultSubmitBtn.disabled = false;
+            return;
+        }
+        taskResultStatus.textContent = "任务成果已提交";
+        taskResultForm.reset();
+        taskResultSubmitBtn.disabled = false;
+        await loadTaskResults(post.id);
+    });
+    if (post.task?.can_view_results) {
+        void loadTaskResults(post.id);
+    }
+}
+async function loadTaskResults(postId) {
+    const container = document.getElementById("taskResultList");
+    if (!container) {
+        return;
+    }
+    container.innerHTML = "<div class='reply-empty'>加载任务成果中...</div>";
+    const res = await fetch(`${API_BASE}/api/tasks/${postId}/results`, {
+        credentials: "include",
+    });
+    if (!res.ok) {
+        container.innerHTML = "<div class='reply-empty'>无法加载任务成果</div>";
+        return;
+    }
+    const data = await res.json();
+    const results = data.results || [];
+    if (!results.length) {
+        container.innerHTML = "<div class='reply-empty'>暂未提交任务成果</div>";
+        return;
+    }
+    container.innerHTML = results
+        .map((result) => {
+        const avatar = resolveAvatar(result.username, result.user_icon, 40);
+        const images = (result.images || [])
+            .map((url) => `<img src="${buildAssetUrl(url)}" alt="task result image" />`)
+            .join("");
+        const videos = (result.video_items || [])
+            .map((item) => {
+            const videoUrl = buildAssetUrl(item.url);
+            const posterUrl = item.poster_url ? buildAssetUrl(item.poster_url) : "";
+            return `
+            <video controls preload="metadata" ${posterUrl ? `poster="${posterUrl}"` : ""}>
+              <source src="${videoUrl}" />
+              你的浏览器不支持 video 标签
+            </video>
+          `;
+        })
+            .join("");
+        return `
+        <div class="task-result-item">
+          <div class="task-applicant-head">
+            <img class="avatar-xs" src="${avatar}" alt="${result.username}" />
+            <div class="reply-meta">${result.username} · ${formatTime(result.created_at)}</div>
+          </div>
+          ${result.note ? `<div class="post-content">${escapeHtml(result.note)}</div>` : ""}
+          ${images ? `<div class="post-images">${images}</div>` : ""}
+          ${videos ? `<div class="post-videos">${videos}</div>` : ""}
+        </div>
+      `;
+    })
+        .join("");
+    enhancePostVideos(container);
 }
 async function loadPost() {
     const postId = getPostId();

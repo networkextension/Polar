@@ -21,6 +21,7 @@ var (
 	errTaskClosed      = errors.New("task application closed")
 	errTaskApplyEnded  = errors.New("task application deadline passed")
 	errTaskSelfApply   = errors.New("task owner cannot apply")
+	errTaskForbidden   = errors.New("task forbidden")
 )
 
 type User struct {
@@ -170,6 +171,9 @@ type TaskPost struct {
 	AppliedByMe           bool       `json:"applied_by_me"`
 	CanApply              bool       `json:"can_apply"`
 	CanManage             bool       `json:"can_manage"`
+	SelectedByMe          bool       `json:"selected_by_me"`
+	CanViewResults        bool       `json:"can_view_results"`
+	CanSubmitResult       bool       `json:"can_submit_result"`
 }
 
 type TaskApplication struct {
@@ -179,6 +183,19 @@ type TaskApplication struct {
 	Username  string    `json:"username"`
 	UserIcon  string    `json:"user_icon"`
 	AppliedAt time.Time `json:"applied_at"`
+}
+
+type TaskResult struct {
+	ID         int64       `json:"id"`
+	PostID     int64       `json:"post_id"`
+	UserID     string      `json:"user_id"`
+	Username   string      `json:"username"`
+	UserIcon   string      `json:"user_icon"`
+	Note       string      `json:"note"`
+	CreatedAt  time.Time   `json:"created_at"`
+	Images     []string    `json:"images"`
+	Videos     []string    `json:"videos"`
+	VideoItems []PostVideo `json:"video_items,omitempty"`
 }
 
 func openDB(dsn string) (*sql.DB, error) {
@@ -294,6 +311,29 @@ CREATE TABLE IF NOT EXISTS task_applications (
 	withdrawn_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS task_results (
+	id BIGSERIAL PRIMARY KEY,
+	post_id BIGINT NOT NULL REFERENCES task_posts(post_id) ON DELETE CASCADE,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	note TEXT NOT NULL DEFAULT '',
+	created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_result_images (
+	id BIGSERIAL PRIMARY KEY,
+	result_id BIGINT NOT NULL REFERENCES task_results(id) ON DELETE CASCADE,
+	file_url TEXT NOT NULL,
+	created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS task_result_videos (
+	id BIGSERIAL PRIMARY KEY,
+	result_id BIGINT NOT NULL REFERENCES task_results(id) ON DELETE CASCADE,
+	file_url TEXT NOT NULL,
+	poster_url TEXT NOT NULL DEFAULT '',
+	created_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS post_images (
 	id BIGSERIAL PRIMARY KEY,
 	post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
@@ -371,6 +411,9 @@ CREATE INDEX IF NOT EXISTS idx_task_applications_post_id ON task_applications(po
 CREATE UNIQUE INDEX IF NOT EXISTS idx_task_applications_active_pair
 	ON task_applications(post_id, user_id)
 	WHERE withdrawn_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_task_results_post_id_created_at ON task_results(post_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_result_images_result_id ON task_result_images(result_id);
+CREATE INDEX IF NOT EXISTS idx_task_result_videos_result_id ON task_result_videos(result_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_threads_pair ON chat_threads(user_low, user_high);
 CREATE INDEX IF NOT EXISTS idx_chat_threads_last_message_at ON chat_threads(last_message_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id_created_at ON chat_messages(thread_id, created_at DESC);
@@ -1364,10 +1407,13 @@ func (s *Server) attachTaskData(posts []Post, currentUserID string) error {
 			task.InvitationSentAt = &invitationSentAt.Time
 		}
 		if post := taskIndex[postID]; post != nil {
+			task.SelectedByMe = task.SelectedApplicantID != "" && task.SelectedApplicantID == currentUserID
 			task.CanManage = post.UserID == currentUserID
 			task.CanApply = post.UserID != currentUserID &&
 				task.SelectedApplicantID == "" &&
 				(task.AppliedByMe || (task.ApplicationStatus == "open" && now.Before(task.ApplyDeadline)))
+			task.CanViewResults = task.CanManage || task.SelectedByMe
+			task.CanSubmitResult = task.SelectedByMe
 			post.Task = &task
 		}
 	}
@@ -1440,10 +1486,13 @@ func (s *Server) getTaskPostByID(postID int64, currentUserID string) (*TaskPost,
 		task.InvitationSentAt = &invitationSentAt.Time
 	}
 	now := time.Now()
+	task.SelectedByMe = task.SelectedApplicantID != "" && task.SelectedApplicantID == currentUserID
 	task.CanManage = postOwner == currentUserID
 	task.CanApply = postOwner != currentUserID &&
 		task.SelectedApplicantID == "" &&
 		(task.AppliedByMe || (task.ApplicationStatus == "open" && now.Before(task.ApplyDeadline)))
+	task.CanViewResults = task.CanManage || task.SelectedByMe
+	task.CanSubmitResult = task.SelectedByMe
 	return &task, postOwner, nil
 }
 
@@ -1608,6 +1657,160 @@ func (s *Server) selectTaskApplicant(postID int64, ownerID, applicantID, invitat
 		return 0, 0, "", err
 	}
 	return thread.ID, messageID, invitationTemplate, nil
+}
+
+func (s *Server) canAccessTaskResults(postID int64, userID string) (bool, bool, error) {
+	task, _, err := s.getTaskPostByID(postID, userID)
+	if err != nil {
+		return false, false, err
+	}
+	if task == nil {
+		return false, false, errTaskNotFound
+	}
+	return task.CanViewResults, task.CanSubmitResult, nil
+}
+
+func (s *Server) createTaskResult(postID int64, userID, note string, createdAt time.Time) (int64, error) {
+	var id int64
+	err := s.db.QueryRow(
+		`INSERT INTO task_results (post_id, user_id, note, created_at)
+		 VALUES ($1, $2, $3, $4)
+		 RETURNING id`,
+		postID,
+		userID,
+		note,
+		createdAt,
+	).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+func (s *Server) addTaskResultImage(resultID int64, fileURL string, createdAt time.Time) error {
+	_, err := s.db.Exec(
+		`INSERT INTO task_result_images (result_id, file_url, created_at)
+		 VALUES ($1, $2, $3)`,
+		resultID,
+		fileURL,
+		createdAt,
+	)
+	return err
+}
+
+func (s *Server) addTaskResultVideo(resultID int64, fileURL, posterURL string, createdAt time.Time) error {
+	_, err := s.db.Exec(
+		`INSERT INTO task_result_videos (result_id, file_url, poster_url, created_at)
+		 VALUES ($1, $2, $3, $4)`,
+		resultID,
+		fileURL,
+		posterURL,
+		createdAt,
+	)
+	return err
+}
+
+func (s *Server) deleteTaskResult(resultID int64) error {
+	_, err := s.db.Exec(`DELETE FROM task_results WHERE id = $1`, resultID)
+	return err
+}
+
+func (s *Server) listTaskResults(postID int64, userID string) ([]TaskResult, error) {
+	canView, _, err := s.canAccessTaskResults(postID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !canView {
+		return nil, errTaskForbidden
+	}
+
+	rows, err := s.db.Query(
+		`SELECT tr.id, tr.post_id, tr.user_id, u.username, u.icon_url, tr.note, tr.created_at
+		   FROM task_results tr
+		   JOIN users u ON u.id = tr.user_id
+		  WHERE tr.post_id = $1
+		  ORDER BY tr.created_at DESC, tr.id DESC`,
+		postID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	results := make([]TaskResult, 0)
+	resultIDs := make([]int64, 0)
+	for rows.Next() {
+		var item TaskResult
+		if err := rows.Scan(&item.ID, &item.PostID, &item.UserID, &item.Username, &item.UserIcon, &item.Note, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		results = append(results, item)
+		resultIDs = append(resultIDs, item.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(resultIDs) == 0 {
+		return results, nil
+	}
+
+	imageRows, err := s.db.Query(
+		`SELECT result_id, file_url FROM task_result_images
+		  WHERE result_id = ANY($1)
+		  ORDER BY id ASC`,
+		pq.Array(resultIDs),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer imageRows.Close()
+
+	imageMap := make(map[int64][]string, len(resultIDs))
+	for imageRows.Next() {
+		var resultID int64
+		var fileURL string
+		if err := imageRows.Scan(&resultID, &fileURL); err != nil {
+			return nil, err
+		}
+		imageMap[resultID] = append(imageMap[resultID], fileURL)
+	}
+	if err := imageRows.Err(); err != nil {
+		return nil, err
+	}
+
+	videoRows, err := s.db.Query(
+		`SELECT result_id, file_url, poster_url FROM task_result_videos
+		  WHERE result_id = ANY($1)
+		  ORDER BY id ASC`,
+		pq.Array(resultIDs),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer videoRows.Close()
+
+	videoMap := make(map[int64][]string, len(resultIDs))
+	videoItemMap := make(map[int64][]PostVideo, len(resultIDs))
+	for videoRows.Next() {
+		var resultID int64
+		var fileURL string
+		var posterURL string
+		if err := videoRows.Scan(&resultID, &fileURL, &posterURL); err != nil {
+			return nil, err
+		}
+		videoMap[resultID] = append(videoMap[resultID], fileURL)
+		videoItemMap[resultID] = append(videoItemMap[resultID], PostVideo{URL: fileURL, PosterURL: posterURL})
+	}
+	if err := videoRows.Err(); err != nil {
+		return nil, err
+	}
+
+	for i := range results {
+		results[i].Images = imageMap[results[i].ID]
+		results[i].Videos = videoMap[results[i].ID]
+		results[i].VideoItems = videoItemMap[results[i].ID]
+	}
+	return results, nil
 }
 
 func normalizeChatPair(userA, userB string) (string, string) {

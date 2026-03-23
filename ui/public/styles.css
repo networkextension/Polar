@@ -247,6 +247,18 @@ button:hover {
   flex-wrap: wrap;
 }
 
+.header-nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -826,7 +838,8 @@ button:hover {
 }
 
 .task-meta-card,
-.task-applicants-panel {
+.task-applicants-panel,
+.task-results-card {
   display: grid;
   gap: 10px;
   padding: 12px;
@@ -842,6 +855,21 @@ button:hover {
 }
 
 .task-applicant-item {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.task-result-form,
+.task-result-list {
+  display: grid;
+  gap: 10px;
+}
+
+.task-result-item {
   display: grid;
   gap: 10px;
   padding: 12px;

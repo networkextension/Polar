@@ -218,6 +218,8 @@ func (s *Server) registerRoutes() {
 		api.GET("/tasks/:id/applications", s.AuthMiddleware(), s.handleTaskApplications)
 		api.POST("/tasks/:id/close", s.AuthMiddleware(), s.handleTaskClose)
 		api.POST("/tasks/:id/select-candidate", s.AuthMiddleware(), s.handleTaskSelectCandidate)
+		api.GET("/tasks/:id/results", s.AuthMiddleware(), s.handleTaskResultsList)
+		api.POST("/tasks/:id/results", s.AuthMiddleware(), s.handleTaskResultCreate)
 		api.GET("/chats", s.AuthMiddleware(), s.handleChatList)
 		api.POST("/chats/start", s.AuthMiddleware(), s.handleChatStart)
 		api.GET("/chats/:id/messages", s.AuthMiddleware(), s.handleChatMessages)
