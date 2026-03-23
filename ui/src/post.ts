@@ -2,6 +2,7 @@ import { buildAssetUrl, resolveAvatar } from "./lib/avatar.js";
 import { byId, query } from "./lib/dom.js";
 import { hydrateSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme } from "./lib/theme.js";
+import { fetchTags } from "./api/dashboard.js";
 
 const API_BASE = "";
 const postWelcome = byId<HTMLElement>("postWelcome");
@@ -9,6 +10,7 @@ const postDetail = byId<HTMLElement>("postDetail");
 const postForm = byId<HTMLFormElement>("postForm");
 const postContent = byId<HTMLTextAreaElement>("postContent");
 const postType = byId<HTMLSelectElement>("postType");
+const postTag = byId<HTMLSelectElement>("postTag");
 const taskFields = byId<HTMLElement>("taskFields");
 const taskLocation = byId<HTMLInputElement>("taskLocation");
 const taskStartAt = byId<HTMLInputElement>("taskStartAt");
@@ -37,6 +39,7 @@ type Post = {
   user_id: string;
   username: string;
   user_icon?: string;
+  tag_id?: number | null;
   post_type?: string;
   created_at: string;
   content: string;
@@ -46,6 +49,11 @@ type Post = {
   liked_by_me: boolean;
   like_count: number;
   task?: TaskMeta;
+};
+
+type Tag = {
+  id: number;
+  name: string;
 };
 
 type TaskMeta = {
@@ -90,6 +98,7 @@ let currentUserId = "";
 let currentUserRole = "user";
 let videoModal: HTMLDivElement | null = null;
 let videoModalPlayer: HTMLVideoElement | null = null;
+let currentTags: Tag[] = [];
 
 initStoredTheme();
 bindThemeSync();
@@ -117,6 +126,25 @@ function escapeHtml(value: string): string {
 
 function profileUrl(userId: string): string {
   return `/profile.html?user_id=${encodeURIComponent(userId)}`;
+}
+
+function getTagName(tagId?: number | null): string {
+  if (!tagId) {
+    return "";
+  }
+  return currentTags.find((item) => item.id === tagId)?.name || "";
+}
+
+async function loadTagOptions(): Promise<void> {
+  const { response, data } = await fetchTags();
+  if (!response.ok) {
+    return;
+  }
+  currentTags = data.tags || [];
+  postTag.innerHTML = [
+    '<option value="">不选择板块</option>',
+    ...currentTags.map((tag) => `<option value="${tag.id}">${tag.name}</option>`),
+  ].join("");
 }
 
 function ensureVideoModal(): void {
@@ -291,6 +319,8 @@ function renderPost(post: Post): void {
       </div>
     `
     : "";
+  const tagName = getTagName(post.tag_id);
+  const tagInfo = tagName ? `<div class="tag-chip">${tagName}</div>` : "";
   const taskActions = isTask
     ? `
       <div class="task-actions">
@@ -345,6 +375,7 @@ function renderPost(post: Post): void {
       <div class="post-time">${formatTime(post.created_at)}</div>
     </div>
     <div class="post-content">${post.content}</div>
+    ${tagInfo}
     ${taskInfo}
     <div class="post-images">${images}</div>
     ${videoSection}
@@ -667,6 +698,9 @@ postForm.addEventListener("submit", async (event) => {
 
   const formData = new FormData();
   formData.append("post_type", postType.value);
+  if (postTag.value) {
+    formData.append("tag_id", postTag.value);
+  }
   formData.append("content", content);
   if (postType.value === "task") {
     formData.append("task_location", taskLocation.value.trim());
@@ -706,6 +740,7 @@ postForm.addEventListener("submit", async (event) => {
 async function init(): Promise<void> {
   await hydrateSiteBrand();
   await loadProfile();
+  await loadTagOptions();
   syncTaskFields();
   await loadPost();
 }

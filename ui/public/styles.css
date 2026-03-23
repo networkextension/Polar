@@ -655,6 +655,31 @@ button:hover {
   width: min(100%, 1100px);
 }
 
+.posts-filter-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.post-filter-tabs,
+.post-filter-chips {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.post-filter-btn.active,
+.post-tag-filter.active {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.post-tag-filter {
+  width: auto;
+  border: none;
+  cursor: pointer;
+}
+
 .post-form-panel {
   margin-bottom: 18px;
 }

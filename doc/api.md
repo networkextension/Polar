@@ -378,6 +378,94 @@
 }
 ```
 
+## 帖子与板块筛选
+
+说明：
+
+- 帖子支持绑定一个可选的 `tag_id`
+- `tag_id` 可以理解为 BBS 风格的“板块”
+- 帖子列表支持按 `post_type` 与 `tag_id` 组合筛选
+
+### 发布帖子时指定板块
+
+**POST** `/api/posts`
+
+权限要求：已登录用户
+
+请求类型：`multipart/form-data`
+
+字段补充：
+
+- `tag_id`：可选，指定帖子所属 Tag / 板块
+- `post_type`：可选，默认 `standard`；任务帖传 `task`
+
+示例：
+```bash
+curl -X POST http://localhost:3000/api/posts \
+  -b cookie.txt \
+  -F tag_id=3 \
+  -F post_type=standard \
+  -F content='这是一个 Go 讨论帖子'
+```
+
+成功响应：
+```json
+{
+  "message": "发布成功",
+  "id": 88,
+  "post_type": "standard",
+  "tag_id": 3,
+  "images": [],
+  "videos": [],
+  "video_items": [],
+  "content": "这是一个 Go 讨论帖子",
+  "created": "2026-03-23T09:00:00+08:00"
+}
+```
+
+### 获取帖子列表并筛选
+
+**GET** `/api/posts?limit=10&offset=0&post_type=all&tag_id=3`
+
+权限要求：已登录用户
+
+支持查询参数：
+
+- `limit`：分页大小
+- `offset`：分页偏移
+- `post_type`：`all | standard | task`
+- `tag_id`：可选，按板块筛选
+
+说明：
+
+- 如果只传 `post_type=task`，可筛选零工任务帖
+- 如果只传 `tag_id=3`，可筛选某个板块下的所有帖子
+- 如果两个参数同时传，则表示“在指定板块中筛指定类型”
+
+示例响应：
+```json
+{
+  "posts": [
+    {
+      "id": 88,
+      "user_id": "u_001",
+      "username": "Alice",
+      "tag_id": 3,
+      "post_type": "standard",
+      "content": "这是一个 Go 讨论帖子",
+      "created_at": "2026-03-23T09:00:00+08:00",
+      "like_count": 5,
+      "reply_count": 2,
+      "liked_by_me": false,
+      "images": [],
+      "videos": []
+    }
+  ],
+  "has_more": false,
+  "next_offset": 1
+}
+```
+
 ## 零工任务模块
 
 说明：

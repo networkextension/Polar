@@ -1104,12 +1104,15 @@ func (s *Server) addPostVideo(postID int64, fileURL, posterURL string, createdAt
 	return err
 }
 
-func (s *Server) listPosts(userID string, limit, offset int) ([]Post, bool, error) {
+func (s *Server) listPosts(userID string, limit, offset int, filterTagID *int64, filterPostType string) ([]Post, bool, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	if offset < 0 {
 		offset = 0
+	}
+	if filterPostType == "" {
+		filterPostType = "all"
 	}
 	rows, err := s.db.Query(
 		`SELECT p.id, p.user_id, u.username, u.icon_url, p.tag_id, p.post_type, p.content, p.created_at,
@@ -1129,9 +1132,13 @@ func (s *Server) listPosts(userID string, limit, offset int) ([]Post, bool, erro
 		      GROUP BY post_id
 		   ) r ON r.post_id = p.id
 		   LEFT JOIN post_likes pl ON pl.post_id = p.id AND pl.user_id = $1
+		  WHERE ($2::BIGINT IS NULL OR p.tag_id = $2)
+		    AND ($3 = 'all' OR p.post_type = $3)
 		  ORDER BY p.created_at DESC
-		  LIMIT $2 OFFSET $3`,
+		  LIMIT $4 OFFSET $5`,
 		userID,
+		filterTagID,
+		filterPostType,
 		limit+1,
 		offset,
 	)

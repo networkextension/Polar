@@ -251,7 +251,26 @@ func (s *Server) handlePostList(c *gin.Context) {
 		offset = parsed
 	}
 
-	posts, hasMore, err := s.listPosts(userIDStr, limit, offset)
+	var tagID *int64
+	if tagIDStr := strings.TrimSpace(c.Query("tag_id")); tagIDStr != "" {
+		parsed, err := strconv.ParseInt(tagIDStr, 10, 64)
+		if err != nil || parsed <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的标签"})
+			return
+		}
+		tagID = &parsed
+	}
+
+	postType := strings.TrimSpace(c.Query("post_type"))
+	if postType == "" {
+		postType = "all"
+	}
+	if postType != "all" && postType != "standard" && postType != "task" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的帖子类型"})
+		return
+	}
+
+	posts, hasMore, err := s.listPosts(userIDStr, limit, offset, tagID, postType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return

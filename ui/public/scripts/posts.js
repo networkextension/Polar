@@ -2,16 +2,23 @@ import { buildAssetUrl, resolveAvatar } from "./lib/avatar.js";
 import { byId, query } from "./lib/dom.js";
 import { hydrateSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme } from "./lib/theme.js";
+import { fetchTags } from "./api/dashboard.js";
 const API_BASE = "";
 const postWelcome = byId("postWelcome");
 const postList = byId("postList");
 const postLoadMoreBtn = byId("postLoadMoreBtn");
+const postTypeFilters = byId("postTypeFilters");
+const tagFilters = byId("tagFilters");
+const postListBadge = byId("postListBadge");
 let nextOffset = 0;
 let hasMore = true;
 let currentUserId = "";
 let currentUserRole = "user";
 let videoModal = null;
 let videoModalPlayer = null;
+let currentPostTypeFilter = "all";
+let currentTagFilter = null;
+let currentTags = [];
 initStoredTheme();
 bindThemeSync();
 function formatTime(value) {
@@ -19,6 +26,67 @@ function formatTime(value) {
 }
 function profileUrl(userId) {
     return `/profile.html?user_id=${encodeURIComponent(userId)}`;
+}
+function getTagName(tagId) {
+    if (!tagId) {
+        return "";
+    }
+    return currentTags.find((item) => item.id === tagId)?.name || "";
+}
+function updateListBadge() {
+    if (currentTagFilter) {
+        postListBadge.textContent = getTagName(currentTagFilter) || "板块帖子";
+        return;
+    }
+    postListBadge.textContent =
+        currentPostTypeFilter === "task" ? "零工任务" : currentPostTypeFilter === "standard" ? "普通帖子" : "最新帖子";
+}
+function renderTypeFilters() {
+    const items = [
+        { label: "最新帖子", value: "all" },
+        { label: "普通帖子", value: "standard" },
+        { label: "零工", value: "task" },
+    ];
+    postTypeFilters.innerHTML = items
+        .map((item) => `<button class="btn-inline btn-secondary post-filter-btn ${currentPostTypeFilter === item.value && !currentTagFilter ? "active" : ""}" data-post-type="${item.value}" type="button">${item.label}</button>`)
+        .join("");
+    postTypeFilters.querySelectorAll(".post-filter-btn").forEach((button) => {
+        button.addEventListener("click", async () => {
+            currentPostTypeFilter = button.dataset.postType || "all";
+            currentTagFilter = null;
+            renderTypeFilters();
+            renderTagFilters();
+            updateListBadge();
+            await loadPosts(true);
+        });
+    });
+}
+function renderTagFilters() {
+    tagFilters.innerHTML = currentTags
+        .map((tag) => `<button class="tag-chip post-tag-filter ${currentTagFilter === tag.id ? "active" : ""}" data-tag-id="${tag.id}" type="button">${tag.name}</button>`)
+        .join("");
+    tagFilters.querySelectorAll(".post-tag-filter").forEach((button) => {
+        button.addEventListener("click", async () => {
+            currentTagFilter = Number(button.dataset.tagId);
+            currentPostTypeFilter = "all";
+            renderTypeFilters();
+            renderTagFilters();
+            updateListBadge();
+            await loadPosts(true);
+        });
+    });
+}
+async function loadTags() {
+    renderTypeFilters();
+    updateListBadge();
+    const { response, data } = await fetchTags();
+    if (!response.ok) {
+        return;
+    }
+    currentTags = data.tags || [];
+    renderTypeFilters();
+    renderTagFilters();
+    updateListBadge();
 }
 function ensureVideoModal() {
     if (videoModal) {
@@ -134,13 +202,15 @@ function createPostCard(post) {
         </div>
       `
         : "";
+    const tagName = getTagName(post.tag_id);
+    const tagSummary = tagName ? `<span class="tag-chip">${tagName}</span>` : "";
     card.innerHTML = `
     <div class="post-header">
       <div class="post-author">
         <a href="${profileUrl(post.user_id)}"><img class="avatar-sm" src="${avatar}" alt="${post.username}" /></a>
         ${authorLabel}
       </div>
-      <div class="post-time">${formatTime(post.created_at)}</div>
+      <div class="post-time">${tagSummary}${tagSummary ? " · " : ""}${formatTime(post.created_at)}</div>
     </div>
     <div class="post-content">${post.content}</div>
     ${taskSummary}
@@ -199,7 +269,15 @@ async function loadPosts(reset = false) {
     if (!hasMore) {
         return;
     }
-    const res = await fetch(`${API_BASE}/api/posts?limit=10&offset=${nextOffset}`, {
+    const params = new URLSearchParams({
+        limit: "10",
+        offset: String(nextOffset),
+        post_type: currentTagFilter ? "all" : currentPostTypeFilter,
+    });
+    if (currentTagFilter) {
+        params.set("tag_id", String(currentTagFilter));
+    }
+    const res = await fetch(`${API_BASE}/api/posts?${params.toString()}`, {
         credentials: "include",
     });
     if (!res.ok) {
@@ -227,6 +305,7 @@ postLoadMoreBtn.addEventListener("click", () => {
 async function init() {
     await hydrateSiteBrand();
     await loadProfile();
+    await loadTags();
     await loadPosts(true);
 }
 void init();

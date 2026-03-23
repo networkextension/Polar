@@ -12,6 +12,7 @@ id | 帖子 ID | number
 user_id | 发帖用户 ID | string
 username | 发帖用户名 | string
 tag_id | 标签 ID（可为空） | number \| null
+post_type | 帖子类型，`standard` 或 `task` | string
 content | 帖子正文 | string
 created_at | 发布时间（UTC） | string (ISO8601)
 like_count | 点赞数 | number
@@ -61,10 +62,20 @@ updated_at | 更新时间 | string (ISO8601)
 5. **标签可选**  
    `tag_id` 可为空，用于后续板块功能扩展。
 
-6. **删帖权限**  
+6. **帖子支持按板块筛选**  
+   广场页支持：
+   - 查看全部最新帖子
+   - 查看普通帖子
+   - 查看零工任务帖
+   - 按指定 Tag / 板块筛选帖子
+
+7. **任务帖仍属于帖子体系**  
+   任务帖通过 `post_type = "task"` 区分，本质仍然是帖子，因此同样可以绑定 `tag_id`。
+
+8. **删帖权限**  
    管理员可删除任意帖子；普通用户只能删除自己发布的帖子。
 
-7. **删除后不可见**  
+9. **删除后不可见**  
    帖子删除后不会出现在列表接口中，详情接口访问该帖子会返回 `404`。
 
 ## 3. 前端交互建议
@@ -72,8 +83,13 @@ updated_at | 更新时间 | string (ISO8601)
 ### 3.1 帖子广场（posts.html）
 
 - 页面显示最新帖子列表
+- 顶部支持筛选：
+  - 最新帖子
+  - 普通帖子
+  - 零工
+  - Tag / 板块
 - 每条帖子展示：
-  - 用户名、发布时间、正文、图片缩略图、视频播放器
+  - 用户名、发布时间、所属 Tag、正文、图片缩略图、视频播放器
   - 点赞按钮 + 数量
   - “查看详情”跳转
   - 当前用户为管理员或帖子作者本人时，显示“删除帖子”
@@ -89,6 +105,8 @@ updated_at | 更新时间 | string (ISO8601)
 
 ### 3.3 发帖（post.html / 未来可拆出 new-post.html）
 
+- 可选选择一个 Tag / 板块
+- 普通帖子与任务帖共用发帖入口
 - 内容为必填
 - 图片可选上传（支持多选）
 - 视频可选上传（支持多选）
@@ -116,6 +134,9 @@ HTTP 状态码 | 说明 | UI 处理
 
 - 图片上传需使用 `multipart/form-data`，字段名 `images`
 - 视频上传需使用 `multipart/form-data`，字段名 `videos`
+- 如需指定板块，提交 `tag_id`
+- 如需筛选板块，可在列表接口传 `tag_id`
+- 如需筛选帖子类型，可在列表接口传 `post_type=all|standard|task`
 - 帖子详情建议缓存图片 URL
 - 视频封面由服务端在上传后使用 `ffmpeg` 生成，并通过 `video_items[].poster_url` 返回
 - 点赞状态由 `liked_by_me` 驱动，避免本地猜测

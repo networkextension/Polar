@@ -2,12 +2,14 @@ import { buildAssetUrl, resolveAvatar } from "./lib/avatar.js";
 import { byId, query } from "./lib/dom.js";
 import { hydrateSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme } from "./lib/theme.js";
+import { fetchTags } from "./api/dashboard.js";
 const API_BASE = "";
 const postWelcome = byId("postWelcome");
 const postDetail = byId("postDetail");
 const postForm = byId("postForm");
 const postContent = byId("postContent");
 const postType = byId("postType");
+const postTag = byId("postTag");
 const taskFields = byId("taskFields");
 const taskLocation = byId("taskLocation");
 const taskStartAt = byId("taskStartAt");
@@ -22,6 +24,7 @@ let currentUserId = "";
 let currentUserRole = "user";
 let videoModal = null;
 let videoModalPlayer = null;
+let currentTags = [];
 initStoredTheme();
 bindThemeSync();
 function getPostId() {
@@ -43,6 +46,23 @@ function escapeHtml(value) {
 }
 function profileUrl(userId) {
     return `/profile.html?user_id=${encodeURIComponent(userId)}`;
+}
+function getTagName(tagId) {
+    if (!tagId) {
+        return "";
+    }
+    return currentTags.find((item) => item.id === tagId)?.name || "";
+}
+async function loadTagOptions() {
+    const { response, data } = await fetchTags();
+    if (!response.ok) {
+        return;
+    }
+    currentTags = data.tags || [];
+    postTag.innerHTML = [
+        '<option value="">不选择板块</option>',
+        ...currentTags.map((tag) => `<option value="${tag.id}">${tag.name}</option>`),
+    ].join("");
 }
 function ensureVideoModal() {
     if (videoModal) {
@@ -198,6 +218,8 @@ function renderPost(post) {
       </div>
     `
         : "";
+    const tagName = getTagName(post.tag_id);
+    const tagInfo = tagName ? `<div class="tag-chip">${tagName}</div>` : "";
     const taskActions = isTask
         ? `
       <div class="task-actions">
@@ -245,6 +267,7 @@ function renderPost(post) {
       <div class="post-time">${formatTime(post.created_at)}</div>
     </div>
     <div class="post-content">${post.content}</div>
+    ${tagInfo}
     ${taskInfo}
     <div class="post-images">${images}</div>
     ${videoSection}
@@ -544,6 +567,9 @@ postForm.addEventListener("submit", async (event) => {
     postSubmitBtn.disabled = true;
     const formData = new FormData();
     formData.append("post_type", postType.value);
+    if (postTag.value) {
+        formData.append("tag_id", postTag.value);
+    }
     formData.append("content", content);
     if (postType.value === "task") {
         formData.append("task_location", taskLocation.value.trim());
@@ -583,6 +609,7 @@ postForm.addEventListener("submit", async (event) => {
 async function init() {
     await hydrateSiteBrand();
     await loadProfile();
+    await loadTagOptions();
     syncTaskFields();
     await loadPost();
 }
