@@ -1006,6 +1006,25 @@ curl -X POST http://localhost:3000/api/posts \
 - websocket 连接成功后，服务端会把对应用户设备标记为在线
 - websocket 断开后，服务端会更新该设备离线状态，并重新聚合用户在线状态
 - 这些在线状态是为了下一步“离线用户 Push 通知”做准备
+- 系统内置了一个 `system` 用户作为 AI 助理
+- 发给 `system` 的私信会转给后台 AI agent
+- AI agent 的长回复会先写入 `markdown_entries`，再作为 `shared_markdown` 消息返回聊天线程
+
+### AI 助理状态
+
+**GET** `/api/system-agent`
+
+权限要求：已登录用户
+
+成功响应：
+```json
+{
+  "user_id": "system",
+  "username": "system",
+  "ready": true,
+  "message": "system 助理可通过 user_id=system 发起私聊"
+}
+```
 
 ### 创建或获取私聊会话
 
@@ -1025,13 +1044,13 @@ curl -X POST http://localhost:3000/api/posts \
 {
   "chat": {
     "id": 12,
-    "other_user_id": "u_018",
-    "other_username": "Bob",
-    "other_user_icon": "/uploads/icon_u_018.png",
-    "other_user_online": true,
-    "other_user_device_type": "ios",
+    "other_user_id": "system",
+    "other_username": "system",
+    "other_user_icon": "",
+    "other_user_online": false,
+    "other_user_device_type": "browser",
     "other_user_last_seen_at": "2026-03-24T10:20:30+08:00",
-    "last_message": "你好",
+    "last_message": "[AI 文档回复]",
     "last_message_at": "2026-03-24T10:20:30+08:00",
     "created_at": "2026-03-24T09:00:00+08:00",
     "unread_count": 0
@@ -1087,16 +1106,68 @@ curl -X POST http://localhost:3000/api/posts \
     {
       "id": 88,
       "thread_id": 12,
-      "sender_id": "u_001",
-      "sender_username": "Alice",
-      "sender_icon": "/uploads/icon_u_001.png",
-      "content": "你好",
+      "sender_id": "system",
+      "sender_username": "system",
+      "sender_icon": "",
+      "message_type": "shared_markdown",
+      "content": "以下是本次 AI 回复的摘要预览……",
+      "markdown_entry_id": 135,
+      "markdown_title": "活动执行 SOP 建议",
       "created_at": "2026-03-24T10:20:30+08:00",
       "deleted": false
     }
   ],
   "has_more": false,
   "next_offset": 1
+}
+```
+
+`message_type` 当前可能值：
+
+- `text`：普通文本消息
+- `shared_markdown`：共享 Markdown 消息
+
+当 `message_type = "shared_markdown"` 时：
+
+- `content`：仅用于消息卡片和会话列表中的简短预览
+- `markdown_entry_id`：对应的 Markdown 记录 ID
+- `markdown_title`：对应 Markdown 标题
+
+### 读取共享 Markdown 消息正文
+
+**GET** `/api/chats/:id/messages/:messageId/markdown`
+
+权限要求：会话参与者
+
+说明：
+
+- 仅适用于 `message_type = "shared_markdown"` 的消息
+- 前端可用该接口实现“放大/缩小”“复制”“公开分享”“收藏”
+
+成功响应：
+```json
+{
+  "entry": {
+    "id": 135,
+    "user_id": "system",
+    "title": "活动执行 SOP 建议",
+    "file_path": "data/markdown/activity-sop_20260324_system.md",
+    "is_public": false,
+    "uploaded_at": "2026-03-24T10:20:30+08:00"
+  },
+  "content": "# 活动执行 SOP 建议\n\n1. 提前确认场地\n2. 明确人员分工",
+  "message": {
+    "id": 88,
+    "thread_id": 12,
+    "sender_id": "system",
+    "sender_username": "system",
+    "message_type": "shared_markdown",
+    "content": "以下是本次 AI 回复的摘要预览……",
+    "markdown_entry_id": 135,
+    "markdown_title": "活动执行 SOP 建议",
+    "created_at": "2026-03-24T10:20:30+08:00"
+  },
+  "can_edit": false
 }
 ```
 
@@ -1142,6 +1213,7 @@ curl -X POST http://localhost:3000/api/posts \
 
 - 依赖登录后下发的 Cookie Session
 - 当前连接建立时会读取会话中的设备类型信息
+- `shared_markdown` 消息也会通过 `message` 事件下发，但事件里只包含预览和引用信息
 
 客户端收到的事件类型如下。
 
@@ -1154,9 +1226,12 @@ curl -X POST http://localhost:3000/api/posts \
   "message": {
     "id": 88,
     "thread_id": 12,
-    "sender_id": "u_001",
-    "sender_username": "Alice",
-    "content": "你好",
+    "sender_id": "system",
+    "sender_username": "system",
+    "message_type": "shared_markdown",
+    "content": "以下是本次 AI 回复的摘要预览……",
+    "markdown_entry_id": 135,
+    "markdown_title": "活动执行 SOP 建议",
     "created_at": "2026-03-24T10:20:30+08:00"
   }
 }
@@ -1226,6 +1301,12 @@ curl -X POST http://localhost:3000/api/posts \
   "is_public": true
 }
 ```
+
+补充说明：
+
+- 聊天里的 `shared_markdown` 消息执行“公开分享”时，会复用该接口并传 `is_public = true`
+- 执行“收藏”时，同样复用该接口，但会传 `is_public = false`
+- 收藏成功后，前端通常会跳转到 `/editor.html?id=<id>` 继续编辑
 
 ## 分页获取 Markdown 记录
 

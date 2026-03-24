@@ -168,16 +168,19 @@ type ChatSummary struct {
 }
 
 type ChatMessage struct {
-	ID             int64      `json:"id"`
-	ThreadID       int64      `json:"thread_id"`
-	SenderID       string     `json:"sender_id"`
-	SenderUsername string     `json:"sender_username"`
-	SenderIcon     string     `json:"sender_icon"`
-	Content        string     `json:"content"`
-	CreatedAt      time.Time  `json:"created_at"`
-	DeletedAt      *time.Time `json:"deleted_at,omitempty"`
-	DeletedBy      string     `json:"deleted_by,omitempty"`
-	Deleted        bool       `json:"deleted"`
+	ID              int64      `json:"id"`
+	ThreadID        int64      `json:"thread_id"`
+	SenderID        string     `json:"sender_id"`
+	SenderUsername  string     `json:"sender_username"`
+	SenderIcon      string     `json:"sender_icon"`
+	MessageType     string     `json:"message_type"`
+	Content         string     `json:"content"`
+	MarkdownEntryID *int64     `json:"markdown_entry_id,omitempty"`
+	MarkdownTitle   string     `json:"markdown_title,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
+	DeletedBy       string     `json:"deleted_by,omitempty"`
+	Deleted         bool       `json:"deleted"`
 }
 
 type TaskPost struct {
@@ -498,7 +501,10 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 	id BIGSERIAL PRIMARY KEY,
 	thread_id BIGINT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
 	sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	message_type TEXT NOT NULL DEFAULT 'text',
 	content TEXT NOT NULL,
+	markdown_entry_id BIGINT REFERENCES markdown_entries(id) ON DELETE SET NULL,
+	markdown_title TEXT NOT NULL DEFAULT '',
 	created_at TIMESTAMPTZ NOT NULL
 );
 
@@ -507,6 +513,15 @@ ALTER TABLE chat_messages
 
 ALTER TABLE chat_messages
 	ADD COLUMN IF NOT EXISTS deleted_by TEXT;
+
+ALTER TABLE chat_messages
+	ADD COLUMN IF NOT EXISTS message_type TEXT NOT NULL DEFAULT 'text';
+
+ALTER TABLE chat_messages
+	ADD COLUMN IF NOT EXISTS markdown_entry_id BIGINT REFERENCES markdown_entries(id) ON DELETE SET NULL;
+
+ALTER TABLE chat_messages
+	ADD COLUMN IF NOT EXISTS markdown_title TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS chat_reads (
 	thread_id BIGINT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
@@ -777,6 +792,23 @@ func (s *Server) createMarkdownEntryReturningID(userID, title, filePath string, 
 		return 0, err
 	}
 	return id, nil
+}
+
+func (s *Server) getMarkdownEntryByID(id int64) (*MarkdownEntry, error) {
+	var entry MarkdownEntry
+	err := s.db.QueryRow(
+		`SELECT id, user_id, title, file_path, is_public, uploaded_at
+		   FROM markdown_entries
+		  WHERE id = $1`,
+		id,
+	).Scan(&entry.ID, &entry.UserID, &entry.Title, &entry.FilePath, &entry.IsPublic, &entry.UploadedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &entry, nil
 }
 
 func (s *Server) listWebAuthnCredentials(userID string) ([]webauthn.Credential, error) {
@@ -2486,7 +2518,7 @@ func (s *Server) listChatMessages(threadID int64, limit, offset int) ([]ChatMess
 		offset = 0
 	}
 	rows, err := s.db.Query(
-		`SELECT m.id, m.thread_id, m.sender_id, u.username, u.icon_url, m.content, m.created_at, m.deleted_at, m.deleted_by
+		`SELECT m.id, m.thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
 		   FROM chat_messages m
 		   JOIN users u ON u.id = m.sender_id
 		  WHERE m.thread_id = $1
@@ -2504,6 +2536,7 @@ func (s *Server) listChatMessages(threadID int64, limit, offset int) ([]ChatMess
 	messages := make([]ChatMessage, 0, limit+1)
 	for rows.Next() {
 		var msg ChatMessage
+		var markdownEntryID sql.NullInt64
 		var deletedAt sql.NullTime
 		var deletedBy sql.NullString
 		if err := rows.Scan(
@@ -2512,7 +2545,10 @@ func (s *Server) listChatMessages(threadID int64, limit, offset int) ([]ChatMess
 			&msg.SenderID,
 			&msg.SenderUsername,
 			&msg.SenderIcon,
+			&msg.MessageType,
 			&msg.Content,
+			&markdownEntryID,
+			&msg.MarkdownTitle,
 			&msg.CreatedAt,
 			&deletedAt,
 			&deletedBy,
@@ -2523,6 +2559,9 @@ func (s *Server) listChatMessages(threadID int64, limit, offset int) ([]ChatMess
 			msg.DeletedAt = &deletedAt.Time
 			msg.Deleted = true
 			msg.Content = ""
+		}
+		if markdownEntryID.Valid {
+			msg.MarkdownEntryID = &markdownEntryID.Int64
 		}
 		if deletedBy.Valid {
 			msg.DeletedBy = deletedBy.String
@@ -2585,6 +2624,10 @@ func (s *Server) getChatCounterparty(threadID int64, userID string) (string, err
 }
 
 func (s *Server) createChatMessage(threadID int64, senderID, content string, createdAt time.Time) (int64, error) {
+	return s.createChatMessageWithMetadata(threadID, senderID, "text", content, nil, "", createdAt)
+}
+
+func (s *Server) createChatMessageWithMetadata(threadID int64, senderID, messageType, content string, markdownEntryID *int64, markdownTitle string, createdAt time.Time) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
@@ -2597,12 +2640,15 @@ func (s *Server) createChatMessage(threadID int64, senderID, content string, cre
 
 	var id int64
 	err = tx.QueryRow(
-		`INSERT INTO chat_messages (thread_id, sender_id, content, created_at)
-		 VALUES ($1, $2, $3, $4)
+		`INSERT INTO chat_messages (thread_id, sender_id, message_type, content, markdown_entry_id, markdown_title, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
 		 RETURNING id`,
 		threadID,
 		senderID,
+		messageType,
 		content,
+		markdownEntryID,
+		markdownTitle,
 		createdAt,
 	).Scan(&id)
 	if err != nil {
@@ -2628,10 +2674,11 @@ func (s *Server) createChatMessage(threadID int64, senderID, content string, cre
 
 func (s *Server) getChatMessageByID(messageID int64) (*ChatMessage, error) {
 	var msg ChatMessage
+	var markdownEntryID sql.NullInt64
 	var deletedAt sql.NullTime
 	var deletedBy sql.NullString
 	err := s.db.QueryRow(
-		`SELECT m.id, m.thread_id, m.sender_id, u.username, u.icon_url, m.content, m.created_at, m.deleted_at, m.deleted_by
+		`SELECT m.id, m.thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
 		   FROM chat_messages m
 		   JOIN users u ON u.id = m.sender_id
 		  WHERE m.id = $1`,
@@ -2642,7 +2689,10 @@ func (s *Server) getChatMessageByID(messageID int64) (*ChatMessage, error) {
 		&msg.SenderID,
 		&msg.SenderUsername,
 		&msg.SenderIcon,
+		&msg.MessageType,
 		&msg.Content,
+		&markdownEntryID,
+		&msg.MarkdownTitle,
 		&msg.CreatedAt,
 		&deletedAt,
 		&deletedBy,
@@ -2658,6 +2708,9 @@ func (s *Server) getChatMessageByID(messageID int64) (*ChatMessage, error) {
 		msg.Deleted = true
 		msg.Content = ""
 	}
+	if markdownEntryID.Valid {
+		msg.MarkdownEntryID = &markdownEntryID.Int64
+	}
 	if deletedBy.Valid {
 		msg.DeletedBy = deletedBy.String
 	}
@@ -2669,7 +2722,7 @@ func (s *Server) listRecentChatMessages(threadID int64, limit int) ([]ChatMessag
 		limit = 10
 	}
 	rows, err := s.db.Query(
-		`SELECT m.id, m.thread_id, m.sender_id, u.username, u.icon_url, m.content, m.created_at, m.deleted_at, m.deleted_by
+		`SELECT m.id, m.thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
 		   FROM chat_messages m
 		   JOIN users u ON u.id = m.sender_id
 		  WHERE m.thread_id = $1
@@ -2686,6 +2739,7 @@ func (s *Server) listRecentChatMessages(threadID int64, limit int) ([]ChatMessag
 	items := make([]ChatMessage, 0, limit)
 	for rows.Next() {
 		var msg ChatMessage
+		var markdownEntryID sql.NullInt64
 		var deletedAt sql.NullTime
 		var deletedBy sql.NullString
 		if err := rows.Scan(
@@ -2694,7 +2748,10 @@ func (s *Server) listRecentChatMessages(threadID int64, limit int) ([]ChatMessag
 			&msg.SenderID,
 			&msg.SenderUsername,
 			&msg.SenderIcon,
+			&msg.MessageType,
 			&msg.Content,
+			&markdownEntryID,
+			&msg.MarkdownTitle,
 			&msg.CreatedAt,
 			&deletedAt,
 			&deletedBy,
@@ -2704,6 +2761,9 @@ func (s *Server) listRecentChatMessages(threadID int64, limit int) ([]ChatMessag
 		if deletedAt.Valid {
 			msg.DeletedAt = &deletedAt.Time
 			msg.Deleted = true
+		}
+		if markdownEntryID.Valid {
+			msg.MarkdownEntryID = &markdownEntryID.Int64
 		}
 		if deletedBy.Valid {
 			msg.DeletedBy = deletedBy.String

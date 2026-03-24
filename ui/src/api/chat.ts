@@ -1,6 +1,7 @@
 import { request, requestJson } from "./http.js";
 import type {
   ChatListResponse,
+  SharedMarkdownResponse,
   ChatMessagesResponse,
   StartChatResponse,
 } from "../types/chat.js";
@@ -18,6 +19,10 @@ export async function startChat(userId: string) {
 
 export async function fetchMessages(threadId: string, limit = 200) {
   return requestJson<ChatMessagesResponse>(`/api/chats/${threadId}/messages?limit=${limit}`);
+}
+
+export async function fetchSharedMarkdown(threadId: string, messageId: string) {
+  return requestJson<SharedMarkdownResponse>(`/api/chats/${threadId}/messages/${messageId}/markdown`);
 }
 
 export async function revokeMessage(threadId: string, messageId: string) {

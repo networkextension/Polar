@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -252,8 +253,20 @@ func (s *Server) sendChatMessage(threadID int64, senderID, senderName, content s
 	if err != nil {
 		return 0, err
 	}
+	return s.broadcastChatMessageByID(threadID, msgID, senderID, senderName)
+}
+
+func (s *Server) sendSharedMarkdownMessage(threadID int64, senderID, senderName string, markdownEntryID int64, markdownTitle, preview string, now time.Time) (int64, error) {
+	msgID, err := s.createChatMessageWithMetadata(threadID, senderID, "shared_markdown", preview, &markdownEntryID, markdownTitle, now)
+	if err != nil {
+		return 0, err
+	}
+	return s.broadcastChatMessageByID(threadID, msgID, senderID, senderName)
+}
+
+func (s *Server) broadcastChatMessageByID(threadID, messageID int64, senderID, senderName string) (int64, error) {
 	if s.wsHub == nil {
-		return msgID, nil
+		return messageID, nil
 	}
 
 	if senderName == "" {
@@ -262,31 +275,26 @@ func (s *Server) sendChatMessage(threadID int64, senderID, senderName, content s
 		}
 	}
 
-	var senderIcon string
-	if user, lookupErr := s.getUserByID(senderID); lookupErr == nil && user != nil {
-		senderIcon = user.IconURL
-	}
-
 	userLow, userHigh, err := s.getChatParticipants(threadID)
 	if err != nil {
 		log.Printf("load chat participants failed: %v", err)
-		return msgID, nil
+		return messageID, nil
 	}
-	message := &ChatMessage{
-		ID:             msgID,
-		ThreadID:       threadID,
-		SenderID:       senderID,
-		SenderUsername: senderName,
-		SenderIcon:     senderIcon,
-		Content:        content,
-		CreatedAt:      now,
+	message, err := s.getChatMessageByID(messageID)
+	if err != nil {
+		log.Printf("load chat message failed: %v", err)
+		return messageID, nil
 	}
+	if message == nil {
+		return messageID, nil
+	}
+	message.SenderUsername = senderName
 	s.broadcastChatEvent([]string{userLow, userHigh}, chatEvent{
 		Type:    "message",
 		ChatID:  threadID,
 		Message: message,
 	})
-	return msgID, nil
+	return messageID, nil
 }
 
 func (s *Server) handleSystemAgentStatus(c *gin.Context) {
@@ -304,6 +312,69 @@ func (s *Server) handleSystemAgentStatus(c *gin.Context) {
 		"username": systemUsername,
 		"ready":    strings.TrimSpace(s.aiAgent.apiKey) != "" && strings.TrimSpace(s.aiAgent.model) != "",
 		"message":  fmt.Sprintf("system 助理可通过 user_id=%s 发起私聊", systemUserID),
+	})
+}
+
+func (s *Server) handleChatSharedMarkdown(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	threadID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || threadID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的会话"})
+		return
+	}
+	participant, err := s.isChatParticipant(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if !participant {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该会话"})
+		return
+	}
+
+	messageID, err := strconv.ParseInt(c.Param("messageId"), 10, 64)
+	if err != nil || messageID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的消息"})
+		return
+	}
+
+	message, err := s.getChatMessageByID(messageID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if message == nil || message.ThreadID != threadID || message.MessageType != "shared_markdown" || message.MarkdownEntryID == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "未找到共享 Markdown"})
+		return
+	}
+
+	entry, err := s.getMarkdownEntryByID(*message.MarkdownEntryID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if entry == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "文档不存在"})
+		return
+	}
+
+	content, err := os.ReadFile(entry.FilePath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "文件不存在"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"entry":    entry,
+		"content":  string(content),
+		"message":  message,
+		"can_edit": false,
 	})
 }
 

@@ -1,4 +1,5 @@
-import { fetchChats, fetchMessages, revokeMessage as revokeChatMessage, sendMessage, startChat } from "./api/chat.js";
+import { fetchChats, fetchMessages, fetchSharedMarkdown, revokeMessage as revokeChatMessage, sendMessage, startChat } from "./api/chat.js";
+import { requestJson } from "./api/http.js";
 import { fetchCurrentUser } from "./api/session.js";
 import { resolveAvatar } from "./lib/avatar.js";
 import { formatDeviceType } from "./lib/client.js";
@@ -20,6 +21,10 @@ let chatCache = [];
 let pollTimer = null;
 let ws = null;
 let wsConnected = false;
+let activeMessages = [];
+const expandedMarkdownMessages = new Set();
+const sharedMarkdownContentCache = new Map();
+const sharedMarkdownLoading = new Set();
 function escapeHtml(input) {
     return input
         .split("&").join("&amp;")
@@ -27,6 +32,40 @@ function escapeHtml(input) {
         .split(">").join("&gt;")
         .split('"').join("&quot;")
         .split("'").join("&#39;");
+}
+async function copyTextToClipboard(text) {
+    if (!text) {
+        return false;
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+        catch {
+            // Fallback below.
+        }
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "true");
+    textarea.style.position = "fixed";
+    textarea.style.top = "-1000px";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    let copied = false;
+    try {
+        copied = document.execCommand("copy");
+    }
+    catch {
+        copied = false;
+    }
+    finally {
+        document.body.removeChild(textarea);
+    }
+    return copied;
 }
 initStoredTheme();
 bindThemeSync();
@@ -142,6 +181,7 @@ async function startChatWithUser(userId) {
     return data.chat || null;
 }
 function renderMessages(messages) {
+    activeMessages = messages;
     if (!messages.length) {
         messageList.innerHTML = "<div class='chat-empty'>暂无消息</div>";
         return;
@@ -150,13 +190,40 @@ function renderMessages(messages) {
         .map((msg) => {
         const isMine = msg.sender_id === currentUserId;
         const isSystem = msg.sender_id === "system";
+        const isSharedMarkdown = msg.message_type === "shared_markdown" && Boolean(msg.markdown_entry_id);
+        const isExpanded = expandedMarkdownMessages.has(String(msg.id));
+        const expandedContent = sharedMarkdownContentCache.get(String(msg.id)) || "";
+        const isLoadingExpanded = sharedMarkdownLoading.has(String(msg.id));
+        const markdownActions = isSharedMarkdown
+            ? `
+            <div class="message-markdown-actions">
+              <button class="btn-inline btn-secondary message-expand" data-id="${msg.id}" type="button">${isExpanded ? "缩小" : "放大"}</button>
+              <button class="btn-inline btn-secondary message-copy" data-id="${msg.id}" type="button">复制</button>
+              <button class="btn-inline btn-secondary message-public-share" data-id="${msg.id}" type="button">公开分享</button>
+              <button class="btn-inline btn-secondary message-favorite" data-id="${msg.id}" type="button">收藏</button>
+            </div>
+          `
+            : "";
         const content = msg.deleted
             ? "消息已撤回"
-            : isSystem
-                ? renderMarkdown(msg.content || "")
-                : escapeHtml(msg.content || "");
+            : isSharedMarkdown
+                ? `
+              <div class="message-markdown-card">
+                <div class="message-markdown-title">${escapeHtml(msg.markdown_title || "AI Markdown 回复")}</div>
+                <div class="message-markdown-preview">${escapeHtml(msg.content || "")}</div>
+                ${isExpanded ? `<div class="message-markdown-expanded markdown-body">${isLoadingExpanded ? "正在加载完整内容..." : renderMarkdown(expandedContent)}</div>` : ""}
+                ${markdownActions}
+              </div>
+            `
+                : isSystem
+                    ? renderMarkdown(msg.content || "")
+                    : escapeHtml(msg.content || "");
         const bubbleClass = msg.deleted ? "message-bubble deleted" : "message-bubble";
-        const contentClass = isSystem && !msg.deleted ? "message-bubble-content markdown-body" : "message-bubble-content";
+        const contentClass = isSharedMarkdown
+            ? "message-bubble-content"
+            : isSystem && !msg.deleted
+                ? "message-bubble-content markdown-body"
+                : "message-bubble-content";
         const revokeButton = isMine && !msg.deleted
             ? `<button class="message-revoke" data-id="${msg.id}" type="button">撤回</button>`
             : "";
@@ -182,6 +249,123 @@ function renderMessages(messages) {
                 return;
             }
             await revokeMessage(messageId);
+        });
+    });
+    messageList.querySelectorAll(".message-copy").forEach((button) => {
+        button.addEventListener("click", async () => {
+            if (!activeThreadId) {
+                return;
+            }
+            const messageId = button.dataset.id;
+            if (!messageId) {
+                return;
+            }
+            const { response, data } = await fetchSharedMarkdown(activeThreadId, messageId);
+            if (!response.ok || !data.content) {
+                return;
+            }
+            try {
+                const copied = await copyTextToClipboard(data.content);
+                if (!copied) {
+                    chatSubtitle.textContent = "复制失败，请手动选择内容复制";
+                    return;
+                }
+                chatSubtitle.textContent = "Markdown 已复制到剪贴板";
+            }
+            catch {
+                chatSubtitle.textContent = "复制失败，请检查浏览器权限";
+            }
+        });
+    });
+    messageList.querySelectorAll(".message-expand").forEach((button) => {
+        button.addEventListener("click", async () => {
+            if (!activeThreadId) {
+                return;
+            }
+            const messageId = button.dataset.id;
+            if (!messageId) {
+                return;
+            }
+            if (expandedMarkdownMessages.has(messageId)) {
+                expandedMarkdownMessages.delete(messageId);
+                renderMessages(activeMessages);
+                return;
+            }
+            expandedMarkdownMessages.add(messageId);
+            if (sharedMarkdownContentCache.has(messageId)) {
+                renderMessages(activeMessages);
+                return;
+            }
+            sharedMarkdownLoading.add(messageId);
+            renderMessages(activeMessages);
+            const { response, data } = await fetchSharedMarkdown(activeThreadId, messageId);
+            sharedMarkdownLoading.delete(messageId);
+            if (!response.ok || !data.content) {
+                expandedMarkdownMessages.delete(messageId);
+                chatSubtitle.textContent = data?.error || "无法加载完整 Markdown";
+                renderMessages(activeMessages);
+                return;
+            }
+            sharedMarkdownContentCache.set(messageId, data.content);
+            renderMessages(activeMessages);
+        });
+    });
+    messageList.querySelectorAll(".message-public-share").forEach((button) => {
+        button.addEventListener("click", async () => {
+            if (!activeThreadId) {
+                return;
+            }
+            const messageId = button.dataset.id;
+            if (!messageId) {
+                return;
+            }
+            const { response, data } = await fetchSharedMarkdown(activeThreadId, messageId);
+            if (!response.ok || !data.content) {
+                return;
+            }
+            const shareResult = await requestJson("/api/markdown", {
+                method: "POST",
+                body: {
+                    title: data.entry?.title || "AI Markdown 回复",
+                    content: data.content,
+                    is_public: true,
+                },
+            });
+            if (!shareResult.response.ok || !shareResult.data.id) {
+                chatSubtitle.textContent = shareResult.data.error || "公开分享失败";
+                return;
+            }
+            chatSubtitle.textContent = "已公开分享";
+            window.open(`/markdown.html?id=${encodeURIComponent(String(shareResult.data.id))}`, "_blank");
+        });
+    });
+    messageList.querySelectorAll(".message-favorite").forEach((button) => {
+        button.addEventListener("click", async () => {
+            if (!activeThreadId) {
+                return;
+            }
+            const messageId = button.dataset.id;
+            if (!messageId) {
+                return;
+            }
+            const { response, data } = await fetchSharedMarkdown(activeThreadId, messageId);
+            if (!response.ok || !data.content) {
+                return;
+            }
+            const saveResult = await requestJson("/api/markdown", {
+                method: "POST",
+                body: {
+                    title: data.entry?.title || "AI Markdown 回复",
+                    content: data.content,
+                    is_public: false,
+                },
+            });
+            if (!saveResult.response.ok || !saveResult.data.id) {
+                chatSubtitle.textContent = saveResult.data.error || "收藏失败";
+                return;
+            }
+            chatSubtitle.textContent = "已收藏到我的 Markdown";
+            window.open(`/editor.html?id=${encodeURIComponent(String(saveResult.data.id))}`, "_blank");
         });
     });
     messageList.scrollTop = messageList.scrollHeight;

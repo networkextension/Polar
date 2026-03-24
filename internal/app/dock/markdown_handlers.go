@@ -1,10 +1,8 @@
 package dock
 
 import (
-	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -27,45 +25,23 @@ func (s *Server) handleMarkdownSubmit(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	username, _ := c.Get("username")
 
-	if err := os.MkdirAll(s.markdownDir, 0o755); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
-		return
-	}
-
-	safeTitle := sanitizeFilename(req.Title)
 	now := time.Now()
-	timestamp := now.Format("20060102_150405")
-	filename := safeTitle + "_" + timestamp + "_" + sanitizeFilename(fmt.Sprintf("%v", userID)) + ".md"
-	path := filepath.Join(s.markdownDir, filename)
-
-	content := req.Content
-	if !strings.HasPrefix(strings.TrimSpace(content), "#") {
-		content = "# " + req.Title + "\n\n" + content
-	}
-
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
-		return
-	}
-
 	userIDStr, ok := userID.(string)
 	if !ok || userIDStr == "" {
-		_ = os.Remove(path)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
 	}
 
-	entryID, err := s.createMarkdownEntryReturningID(userIDStr, req.Title, path, req.IsPublic, now)
+	entry, _, err := s.saveMarkdownDocument(userIDStr, req.Title, req.Content, req.IsPublic, now)
 	if err != nil {
-		_ = os.Remove(path)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message":   "保存成功",
-		"id":        entryID,
-		"file":      path,
+		"id":        entry.ID,
+		"file":      entry.FilePath,
 		"username":  username,
 		"is_public": req.IsPublic,
 	})

@@ -25,13 +25,27 @@ export type ChatMessage = {
   sender_id: string;
   sender_username: string;
   sender_icon?: string;
+  message_type?: string;
   content: string;
+  markdown_entry_id?: number;
+  markdown_title?: string;
   deleted?: boolean;
   created_at: string;
 };
 
 export type ChatMessagesResponse = {
   messages?: ChatMessage[];
+};
+
+export type SharedMarkdownResponse = {
+  entry?: {
+    id: number;
+    title?: string;
+    is_public?: boolean;
+  };
+  content?: string;
+  can_edit?: boolean;
+  error?: string;
 };
 
 export type ChatEventPayload = {

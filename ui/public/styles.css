@@ -1339,13 +1339,15 @@ textarea {
 
 .chat-page {
   width: min(100%, 1480px);
+  min-height: calc(100vh - 110px);
 }
 
 .chat-layout {
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
   gap: 18px;
-  align-items: start;
+  align-items: stretch;
+  min-height: calc(100vh - 180px);
 }
 
 .chat-list {
@@ -1417,7 +1419,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-height: 60vh;
+  min-height: 0;
 }
 
 .chat-thread-header {
@@ -1441,8 +1443,8 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
   min-height: 320px;
-  max-height: 50vh;
   overflow-y: auto;
   padding-right: 6px;
 }
@@ -1582,10 +1584,43 @@ textarea {
   box-shadow: 0 8px 18px var(--secondary-shadow);
 }
 
+.message-markdown-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 260px;
+}
+
+.message-markdown-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.message-markdown-preview {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.message-markdown-expanded {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--border);
+}
+
+.message-markdown-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .message-form {
   display: flex;
   gap: 10px;
   align-items: center;
+  margin-top: auto;
 }
 
 .message-input {

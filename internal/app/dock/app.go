@@ -281,6 +281,7 @@ func (s *Server) registerRoutes() {
 		api.POST("/chats/start", s.AuthMiddleware(), s.handleChatStart)
 		api.GET("/chats/:id/messages", s.AuthMiddleware(), s.handleChatMessages)
 		api.POST("/chats/:id/messages", s.AuthMiddleware(), s.handleChatSend)
+		api.GET("/chats/:id/messages/:messageId/markdown", s.AuthMiddleware(), s.handleChatSharedMarkdown)
 		api.DELETE("/chats/:id/messages/:messageId", s.AuthMiddleware(), s.handleChatDelete)
 		api.GET("/system-agent", s.AuthMiddleware(), s.handleSystemAgentStatus)
 	}

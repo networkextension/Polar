@@ -119,8 +119,18 @@ func (a *aiAgent) handleTask(task aiAgentTask) {
 	if reply == "" {
 		reply = "我暂时没有可返回的结果。"
 	}
-	if _, err := a.server.sendChatMessage(task.ThreadID, systemUserID, systemUsername, reply, time.Now()); err != nil {
-		log.Printf("send ai agent chat message failed: %v", err)
+	now := time.Now()
+	title := buildSystemMarkdownTitle(reply, now)
+	entry, _, err := a.server.saveMarkdownDocument(systemUserID, title, reply, false, now)
+	if err != nil {
+		log.Printf("save ai markdown failed: %v", err)
+		if _, sendErr := a.server.sendChatMessage(task.ThreadID, systemUserID, systemUsername, reply, now); sendErr != nil {
+			log.Printf("send fallback ai agent chat message failed: %v", sendErr)
+		}
+		return
+	}
+	if _, err := a.server.sendSharedMarkdownMessage(task.ThreadID, systemUserID, systemUsername, entry.ID, entry.Title, buildMarkdownPreview(reply, 120), now); err != nil {
+		log.Printf("send ai shared markdown message failed: %v", err)
 	}
 }
 
