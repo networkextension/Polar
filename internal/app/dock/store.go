@@ -665,6 +665,25 @@ func (s *Server) getUserByID(userID string) (*User, error) {
 	return &user, nil
 }
 
+func (s *Server) getUserByUsername(username string) (*User, error) {
+	var user User
+	var lastSeenAt sql.NullTime
+	err := s.db.QueryRow(
+		`SELECT id, username, email, password_hash, role, bio, icon_url, is_online, last_active_device_type, last_seen_at, created_at FROM users WHERE username = $1`,
+		username,
+	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.Role, &user.Bio, &user.IconURL, &user.IsOnline, &user.DeviceType, &lastSeenAt, &user.CreatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if lastSeenAt.Valid {
+		user.LastSeenAt = &lastSeenAt.Time
+	}
+	return &user, nil
+}
+
 func (s *Server) createUser(user *User) error {
 	if user.Role == "" {
 		user.Role = "user"
@@ -2550,6 +2569,21 @@ func (s *Server) getChatParticipants(threadID int64) (string, string, error) {
 	return userLow, userHigh, nil
 }
 
+func (s *Server) getChatCounterparty(threadID int64, userID string) (string, error) {
+	userLow, userHigh, err := s.getChatParticipants(threadID)
+	if err != nil {
+		return "", err
+	}
+	switch userID {
+	case userLow:
+		return userHigh, nil
+	case userHigh:
+		return userLow, nil
+	default:
+		return "", nil
+	}
+}
+
 func (s *Server) createChatMessage(threadID int64, senderID, content string, createdAt time.Time) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -2590,6 +2624,99 @@ func (s *Server) createChatMessage(threadID int64, senderID, content string, cre
 		return 0, err
 	}
 	return id, nil
+}
+
+func (s *Server) getChatMessageByID(messageID int64) (*ChatMessage, error) {
+	var msg ChatMessage
+	var deletedAt sql.NullTime
+	var deletedBy sql.NullString
+	err := s.db.QueryRow(
+		`SELECT m.id, m.thread_id, m.sender_id, u.username, u.icon_url, m.content, m.created_at, m.deleted_at, m.deleted_by
+		   FROM chat_messages m
+		   JOIN users u ON u.id = m.sender_id
+		  WHERE m.id = $1`,
+		messageID,
+	).Scan(
+		&msg.ID,
+		&msg.ThreadID,
+		&msg.SenderID,
+		&msg.SenderUsername,
+		&msg.SenderIcon,
+		&msg.Content,
+		&msg.CreatedAt,
+		&deletedAt,
+		&deletedBy,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if deletedAt.Valid {
+		msg.DeletedAt = &deletedAt.Time
+		msg.Deleted = true
+		msg.Content = ""
+	}
+	if deletedBy.Valid {
+		msg.DeletedBy = deletedBy.String
+	}
+	return &msg, nil
+}
+
+func (s *Server) listRecentChatMessages(threadID int64, limit int) ([]ChatMessage, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := s.db.Query(
+		`SELECT m.id, m.thread_id, m.sender_id, u.username, u.icon_url, m.content, m.created_at, m.deleted_at, m.deleted_by
+		   FROM chat_messages m
+		   JOIN users u ON u.id = m.sender_id
+		  WHERE m.thread_id = $1
+		  ORDER BY m.created_at DESC
+		  LIMIT $2`,
+		threadID,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]ChatMessage, 0, limit)
+	for rows.Next() {
+		var msg ChatMessage
+		var deletedAt sql.NullTime
+		var deletedBy sql.NullString
+		if err := rows.Scan(
+			&msg.ID,
+			&msg.ThreadID,
+			&msg.SenderID,
+			&msg.SenderUsername,
+			&msg.SenderIcon,
+			&msg.Content,
+			&msg.CreatedAt,
+			&deletedAt,
+			&deletedBy,
+		); err != nil {
+			return nil, err
+		}
+		if deletedAt.Valid {
+			msg.DeletedAt = &deletedAt.Time
+			msg.Deleted = true
+		}
+		if deletedBy.Valid {
+			msg.DeletedBy = deletedBy.String
+		}
+		items = append(items, msg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
+		items[i], items[j] = items[j], items[i]
+	}
+	return items, nil
 }
 
 func (s *Server) deleteChatMessage(threadID, messageID int64, userID string, deletedAt time.Time) (bool, error) {

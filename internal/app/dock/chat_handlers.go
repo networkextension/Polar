@@ -2,6 +2,8 @@ package dock
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -220,35 +222,88 @@ func (s *Server) handleChatSend(c *gin.Context) {
 		return
 	}
 
-	now := time.Now()
-	msgID, err := s.createChatMessage(threadID, userIDStr, content, now)
+	username, _ := c.Get("username")
+	senderName, _ := username.(string)
+	msgID, err := s.sendChatMessage(threadID, userIDStr, senderName, content, time.Now())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
 	}
-	if s.wsHub != nil {
-		username, _ := c.Get("username")
-		senderName, _ := username.(string)
-		if userLow, userHigh, err := s.getChatParticipants(threadID); err == nil {
-			message := &ChatMessage{
-				ID:             msgID,
-				ThreadID:       threadID,
-				SenderID:       userIDStr,
-				SenderUsername: senderName,
-				Content:        content,
-				CreatedAt:      now,
-			}
-			s.broadcastChatEvent([]string{userLow, userHigh}, chatEvent{
-				Type:    "message",
-				ChatID:  threadID,
-				Message: message,
-			})
-		}
+
+	otherUserID, err := s.getChatCounterparty(threadID, userIDStr)
+	if err != nil {
+		log.Printf("load chat counterparty failed: %v", err)
+	} else if otherUserID == systemUserID && userIDStr != systemUserID && s.aiAgent != nil {
+		s.aiAgent.enqueue(aiAgentTask{
+			ThreadID: threadID,
+			UserID:   userIDStr,
+			Content:  content,
+		})
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "发送成功",
 		"id":      msgID,
+	})
+}
+
+func (s *Server) sendChatMessage(threadID int64, senderID, senderName, content string, now time.Time) (int64, error) {
+	msgID, err := s.createChatMessage(threadID, senderID, content, now)
+	if err != nil {
+		return 0, err
+	}
+	if s.wsHub == nil {
+		return msgID, nil
+	}
+
+	if senderName == "" {
+		if user, lookupErr := s.getUserByID(senderID); lookupErr == nil && user != nil {
+			senderName = user.Username
+		}
+	}
+
+	var senderIcon string
+	if user, lookupErr := s.getUserByID(senderID); lookupErr == nil && user != nil {
+		senderIcon = user.IconURL
+	}
+
+	userLow, userHigh, err := s.getChatParticipants(threadID)
+	if err != nil {
+		log.Printf("load chat participants failed: %v", err)
+		return msgID, nil
+	}
+	message := &ChatMessage{
+		ID:             msgID,
+		ThreadID:       threadID,
+		SenderID:       senderID,
+		SenderUsername: senderName,
+		SenderIcon:     senderIcon,
+		Content:        content,
+		CreatedAt:      now,
+	}
+	s.broadcastChatEvent([]string{userLow, userHigh}, chatEvent{
+		Type:    "message",
+		ChatID:  threadID,
+		Message: message,
+	})
+	return msgID, nil
+}
+
+func (s *Server) handleSystemAgentStatus(c *gin.Context) {
+	if s.aiAgent == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"user_id":  systemUserID,
+			"username": systemUsername,
+			"ready":    false,
+			"message":  "AI 助理未初始化",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"user_id":  systemUserID,
+		"username": systemUsername,
+		"ready":    strings.TrimSpace(s.aiAgent.apiKey) != "" && strings.TrimSpace(s.aiAgent.model) != "",
+		"message":  fmt.Sprintf("system 助理可通过 user_id=%s 发起私聊", systemUserID),
 	})
 }
 

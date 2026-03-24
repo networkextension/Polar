@@ -19,16 +19,20 @@ const (
 )
 
 type Config struct {
-	Addr          string
-	PostgresDSN   string
-	RedisAddr     string
-	RedisPassword string
-	RedisDB       int
-	RedisPrefix   string
-	MarkdownDir   string
-	UploadDir     string
-	GeoLiteDBPath string
-	PasskeyRPID   string
-	PasskeyOrigin string
-	PasskeyRPName string
+	Addr                string
+	PostgresDSN         string
+	RedisAddr           string
+	RedisPassword       string
+	RedisDB             int
+	RedisPrefix         string
+	MarkdownDir         string
+	UploadDir           string
+	GeoLiteDBPath       string
+	PasskeyRPID         string
+	PasskeyOrigin       string
+	PasskeyRPName       string
+	AIAgentAPIKey       string
+	AIAgentBaseURL      string
+	AIAgentModel        string
+	AIAgentSystemPrompt string
 }

@@ -3,11 +3,13 @@ package dock
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"html/template"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +38,8 @@ type Server struct {
 	passkeySessions map[string]passkeySession
 	passkeyMu       sync.Mutex
 	wsHub           *wsHub
+	workDir         string
+	aiAgent         *aiAgent
 }
 
 func NewServer(cfg Config) (*Server, error) {
@@ -56,6 +60,11 @@ func NewServer(cfg Config) (*Server, error) {
 			Password: cfg.RedisPassword,
 			DB:       cfg.RedisDB,
 		}),
+	}
+
+	workDir, err := os.Getwd()
+	if err == nil {
+		server.workDir = workDir
 	}
 
 	if err := server.redis.Ping(context.Background()).Err(); err != nil {
@@ -108,6 +117,16 @@ func NewServer(cfg Config) (*Server, error) {
 	server.wsHub.onPresenceChanged = server.handlePresenceChange
 	go server.wsHub.run()
 
+	if err := server.ensureSystemUser(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
+	server.aiAgent = newAIAgent(server, cfg)
+	if server.aiAgent != nil {
+		go server.aiAgent.run()
+	}
+
 	server.router = gin.Default()
 	// Increase max upload size for video files (default gin limit is 32 MiB)
 	server.router.MaxMultipartMemory = 512 << 20 // 512 MiB
@@ -125,6 +144,9 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) Close() error {
+	if s.aiAgent != nil {
+		s.aiAgent.stop()
+	}
 	if s.geoIPReader != nil {
 		_ = s.geoIPReader.Close()
 	}
@@ -135,6 +157,35 @@ func (s *Server) Close() error {
 		return nil
 	}
 	return s.db.Close()
+}
+
+func (s *Server) ensureSystemUser() error {
+	if s == nil {
+		return errors.New("server is nil")
+	}
+	user, err := s.getUserByID(systemUserID)
+	if err != nil {
+		return err
+	}
+	if user != nil {
+		return nil
+	}
+
+	password, err := hashPassword(generateSessionID())
+	if err != nil {
+		return err
+	}
+
+	now := time.Now()
+	return s.createUser(&User{
+		ID:        systemUserID,
+		Username:  systemUsername,
+		Email:     systemUserEmail,
+		Password:  password,
+		Role:      "admin",
+		Bio:       "站内 AI 助理",
+		CreatedAt: now,
+	})
 }
 
 func (s *Server) registerRoutes() {
@@ -231,5 +282,6 @@ func (s *Server) registerRoutes() {
 		api.GET("/chats/:id/messages", s.AuthMiddleware(), s.handleChatMessages)
 		api.POST("/chats/:id/messages", s.AuthMiddleware(), s.handleChatSend)
 		api.DELETE("/chats/:id/messages/:messageId", s.AuthMiddleware(), s.handleChatDelete)
+		api.GET("/system-agent", s.AuthMiddleware(), s.handleSystemAgentStatus)
 	}
 }
