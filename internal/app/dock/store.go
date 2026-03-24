@@ -89,10 +89,19 @@ type Tag struct {
 }
 
 type SiteSettings struct {
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	IconURL     string    `json:"icon_url"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Name              string                `json:"name"`
+	Description       string                `json:"description"`
+	IconURL           string                `json:"icon_url"`
+	ApplePushDevCert  *ApplePushCertificate `json:"apple_push_dev_cert,omitempty"`
+	ApplePushProdCert *ApplePushCertificate `json:"apple_push_prod_cert,omitempty"`
+	UpdatedAt         time.Time             `json:"updated_at"`
+}
+
+type ApplePushCertificate struct {
+	Environment string     `json:"environment"`
+	FileName    string     `json:"file_name"`
+	FileURL     string     `json:"file_url"`
+	UploadedAt  *time.Time `json:"uploaded_at,omitempty"`
 }
 
 type Post struct {
@@ -347,11 +356,35 @@ CREATE TABLE IF NOT EXISTS site_settings (
 	name TEXT NOT NULL DEFAULT 'Polar-',
 	description TEXT NOT NULL DEFAULT '',
 	icon_url TEXT NOT NULL DEFAULT '',
+	apple_push_dev_cert_url TEXT NOT NULL DEFAULT '',
+	apple_push_dev_cert_name TEXT NOT NULL DEFAULT '',
+	apple_push_dev_cert_uploaded_at TIMESTAMPTZ,
+	apple_push_prod_cert_url TEXT NOT NULL DEFAULT '',
+	apple_push_prod_cert_name TEXT NOT NULL DEFAULT '',
+	apple_push_prod_cert_uploaded_at TIMESTAMPTZ,
 	updated_at TIMESTAMPTZ NOT NULL
 );
 
-INSERT INTO site_settings (id, name, description, icon_url, updated_at)
-VALUES (1, 'Polar-', '', '', NOW())
+ALTER TABLE site_settings
+	ADD COLUMN IF NOT EXISTS apple_push_dev_cert_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE site_settings
+	ADD COLUMN IF NOT EXISTS apple_push_dev_cert_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE site_settings
+	ADD COLUMN IF NOT EXISTS apple_push_dev_cert_uploaded_at TIMESTAMPTZ;
+ALTER TABLE site_settings
+	ADD COLUMN IF NOT EXISTS apple_push_prod_cert_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE site_settings
+	ADD COLUMN IF NOT EXISTS apple_push_prod_cert_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE site_settings
+	ADD COLUMN IF NOT EXISTS apple_push_prod_cert_uploaded_at TIMESTAMPTZ;
+
+INSERT INTO site_settings (
+	id, name, description, icon_url,
+	apple_push_dev_cert_url, apple_push_dev_cert_name, apple_push_dev_cert_uploaded_at,
+	apple_push_prod_cert_url, apple_push_prod_cert_name, apple_push_prod_cert_uploaded_at,
+	updated_at
+)
+VALUES (1, 'Polar-', '', '', '', '', NULL, '', '', NULL, NOW())
 ON CONFLICT (id) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS posts (
@@ -952,11 +985,31 @@ func (s *Server) listPublicMarkdownEntries(limit, offset int) ([]PublicMarkdownE
 
 func (s *Server) getSiteSettings() (*SiteSettings, error) {
 	var settings SiteSettings
+	var devURL sql.NullString
+	var devName sql.NullString
+	var devUploadedAt sql.NullTime
+	var prodURL sql.NullString
+	var prodName sql.NullString
+	var prodUploadedAt sql.NullTime
 	err := s.db.QueryRow(
-		`SELECT name, description, icon_url, updated_at
+		`SELECT name, description, icon_url,
+		        apple_push_dev_cert_url, apple_push_dev_cert_name, apple_push_dev_cert_uploaded_at,
+		        apple_push_prod_cert_url, apple_push_prod_cert_name, apple_push_prod_cert_uploaded_at,
+		        updated_at
 		 FROM site_settings
 		 WHERE id = 1`,
-	).Scan(&settings.Name, &settings.Description, &settings.IconURL, &settings.UpdatedAt)
+	).Scan(
+		&settings.Name,
+		&settings.Description,
+		&settings.IconURL,
+		&devURL,
+		&devName,
+		&devUploadedAt,
+		&prodURL,
+		&prodName,
+		&prodUploadedAt,
+		&settings.UpdatedAt,
+	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return &SiteSettings{
@@ -968,13 +1021,47 @@ func (s *Server) getSiteSettings() (*SiteSettings, error) {
 		}
 		return nil, err
 	}
+	if devURL.Valid && devURL.String != "" {
+		settings.ApplePushDevCert = &ApplePushCertificate{
+			Environment: "dev",
+			FileName:    devName.String,
+			FileURL:     devURL.String,
+		}
+		if devUploadedAt.Valid {
+			settings.ApplePushDevCert.UploadedAt = &devUploadedAt.Time
+		}
+	}
+	if prodURL.Valid && prodURL.String != "" {
+		settings.ApplePushProdCert = &ApplePushCertificate{
+			Environment: "prod",
+			FileName:    prodName.String,
+			FileURL:     prodURL.String,
+		}
+		if prodUploadedAt.Valid {
+			settings.ApplePushProdCert.UploadedAt = &prodUploadedAt.Time
+		}
+	}
 	return &settings, nil
 }
 
 func (s *Server) updateSiteSettings(name, description string) error {
 	_, err := s.db.Exec(
-		`INSERT INTO site_settings (id, name, description, icon_url, updated_at)
-		 VALUES (1, $1, $2, COALESCE((SELECT icon_url FROM site_settings WHERE id = 1), ''), NOW())
+		`INSERT INTO site_settings (
+		     id, name, description, icon_url,
+		     apple_push_dev_cert_url, apple_push_dev_cert_name, apple_push_dev_cert_uploaded_at,
+		     apple_push_prod_cert_url, apple_push_prod_cert_name, apple_push_prod_cert_uploaded_at,
+		     updated_at
+		 )
+		 VALUES (
+		     1, $1, $2, COALESCE((SELECT icon_url FROM site_settings WHERE id = 1), ''),
+		     COALESCE((SELECT apple_push_dev_cert_url FROM site_settings WHERE id = 1), ''),
+		     COALESCE((SELECT apple_push_dev_cert_name FROM site_settings WHERE id = 1), ''),
+		     (SELECT apple_push_dev_cert_uploaded_at FROM site_settings WHERE id = 1),
+		     COALESCE((SELECT apple_push_prod_cert_url FROM site_settings WHERE id = 1), ''),
+		     COALESCE((SELECT apple_push_prod_cert_name FROM site_settings WHERE id = 1), ''),
+		     (SELECT apple_push_prod_cert_uploaded_at FROM site_settings WHERE id = 1),
+		     NOW()
+		 )
 		 ON CONFLICT (id)
 		 DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, updated_at = NOW()`,
 		name,
@@ -985,15 +1072,107 @@ func (s *Server) updateSiteSettings(name, description string) error {
 
 func (s *Server) updateSiteIcon(iconURL string) error {
 	_, err := s.db.Exec(
-		`INSERT INTO site_settings (id, name, description, icon_url, updated_at)
+		`INSERT INTO site_settings (
+		     id, name, description, icon_url,
+		     apple_push_dev_cert_url, apple_push_dev_cert_name, apple_push_dev_cert_uploaded_at,
+		     apple_push_prod_cert_url, apple_push_prod_cert_name, apple_push_prod_cert_uploaded_at,
+		     updated_at
+		 )
 		 VALUES (1, COALESCE((SELECT name FROM site_settings WHERE id = 1), 'Polar-'),
 		             COALESCE((SELECT description FROM site_settings WHERE id = 1), ''),
 		             $1,
+		             COALESCE((SELECT apple_push_dev_cert_url FROM site_settings WHERE id = 1), ''),
+		             COALESCE((SELECT apple_push_dev_cert_name FROM site_settings WHERE id = 1), ''),
+		             (SELECT apple_push_dev_cert_uploaded_at FROM site_settings WHERE id = 1),
+		             COALESCE((SELECT apple_push_prod_cert_url FROM site_settings WHERE id = 1), ''),
+		             COALESCE((SELECT apple_push_prod_cert_name FROM site_settings WHERE id = 1), ''),
+		             (SELECT apple_push_prod_cert_uploaded_at FROM site_settings WHERE id = 1),
 		             NOW())
 		 ON CONFLICT (id)
 		 DO UPDATE SET icon_url = EXCLUDED.icon_url, updated_at = NOW()`,
 		iconURL,
 	)
+	return err
+}
+
+func (s *Server) updateApplePushCertificate(environment, fileURL, fileName string, uploadedAt time.Time) error {
+	query := ""
+	switch environment {
+	case "dev":
+		query = `INSERT INTO site_settings (
+		           id, name, description, icon_url,
+		           apple_push_dev_cert_url, apple_push_dev_cert_name, apple_push_dev_cert_uploaded_at,
+		           apple_push_prod_cert_url, apple_push_prod_cert_name, apple_push_prod_cert_uploaded_at,
+		           updated_at
+		         )
+		         VALUES (
+		           1,
+		           COALESCE((SELECT name FROM site_settings WHERE id = 1), 'Polar-'),
+		           COALESCE((SELECT description FROM site_settings WHERE id = 1), ''),
+		           COALESCE((SELECT icon_url FROM site_settings WHERE id = 1), ''),
+		           $1, $2, $3,
+		           COALESCE((SELECT apple_push_prod_cert_url FROM site_settings WHERE id = 1), ''),
+		           COALESCE((SELECT apple_push_prod_cert_name FROM site_settings WHERE id = 1), ''),
+		           (SELECT apple_push_prod_cert_uploaded_at FROM site_settings WHERE id = 1),
+		           NOW()
+		         )
+		         ON CONFLICT (id)
+		         DO UPDATE SET apple_push_dev_cert_url = EXCLUDED.apple_push_dev_cert_url,
+		                       apple_push_dev_cert_name = EXCLUDED.apple_push_dev_cert_name,
+		                       apple_push_dev_cert_uploaded_at = EXCLUDED.apple_push_dev_cert_uploaded_at,
+		                       updated_at = NOW()`
+	case "prod":
+		query = `INSERT INTO site_settings (
+		           id, name, description, icon_url,
+		           apple_push_dev_cert_url, apple_push_dev_cert_name, apple_push_dev_cert_uploaded_at,
+		           apple_push_prod_cert_url, apple_push_prod_cert_name, apple_push_prod_cert_uploaded_at,
+		           updated_at
+		         )
+		         VALUES (
+		           1,
+		           COALESCE((SELECT name FROM site_settings WHERE id = 1), 'Polar-'),
+		           COALESCE((SELECT description FROM site_settings WHERE id = 1), ''),
+		           COALESCE((SELECT icon_url FROM site_settings WHERE id = 1), ''),
+		           COALESCE((SELECT apple_push_dev_cert_url FROM site_settings WHERE id = 1), ''),
+		           COALESCE((SELECT apple_push_dev_cert_name FROM site_settings WHERE id = 1), ''),
+		           (SELECT apple_push_dev_cert_uploaded_at FROM site_settings WHERE id = 1),
+		           $1, $2, $3,
+		           NOW()
+		         )
+		         ON CONFLICT (id)
+		         DO UPDATE SET apple_push_prod_cert_url = EXCLUDED.apple_push_prod_cert_url,
+		                       apple_push_prod_cert_name = EXCLUDED.apple_push_prod_cert_name,
+		                       apple_push_prod_cert_uploaded_at = EXCLUDED.apple_push_prod_cert_uploaded_at,
+		                       updated_at = NOW()`
+	default:
+		return errors.New("invalid apple push certificate environment")
+	}
+
+	_, err := s.db.Exec(query, fileURL, fileName, uploadedAt)
+	return err
+}
+
+func (s *Server) clearApplePushCertificate(environment string) error {
+	query := ""
+	switch environment {
+	case "dev":
+		query = `UPDATE site_settings
+		            SET apple_push_dev_cert_url = '',
+		                apple_push_dev_cert_name = '',
+		                apple_push_dev_cert_uploaded_at = NULL,
+		                updated_at = NOW()
+		          WHERE id = 1`
+	case "prod":
+		query = `UPDATE site_settings
+		            SET apple_push_prod_cert_url = '',
+		                apple_push_prod_cert_name = '',
+		                apple_push_prod_cert_uploaded_at = NULL,
+		                updated_at = NOW()
+		          WHERE id = 1`
+	default:
+		return errors.New("invalid apple push certificate environment")
+	}
+	_, err := s.db.Exec(query)
 	return err
 }
 

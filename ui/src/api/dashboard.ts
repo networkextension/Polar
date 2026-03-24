@@ -66,6 +66,19 @@ export async function uploadSiteIcon(formData: FormData) {
   });
 }
 
+export async function uploadApplePushCertificate(environment: "dev" | "prod", formData: FormData) {
+  return requestJson<SiteSettingsResponse>(`/api/site-settings/apple-push-cert?env=${environment}`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function deleteApplePushCertificate(environment: "dev" | "prod") {
+  return requestJson<SiteSettingsResponse>(`/api/site-settings/apple-push-cert?env=${environment}`, {
+    method: "DELETE",
+  });
+}
+
 export async function deleteEntry(id: number) {
   return request(`/api/markdown/${id}`, {
     method: "DELETE",

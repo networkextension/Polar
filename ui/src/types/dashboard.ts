@@ -53,7 +53,16 @@ export type SiteSettings = {
   name: string;
   description: string;
   icon_url?: string;
+  apple_push_dev_cert?: ApplePushCertificate;
+  apple_push_prod_cert?: ApplePushCertificate;
   updated_at?: string;
+};
+
+export type ApplePushCertificate = {
+  environment: "dev" | "prod";
+  file_name: string;
+  file_url: string;
+  uploaded_at?: string;
 };
 
 export type SiteSettingsResponse = ErrorResponse & {

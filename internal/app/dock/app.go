@@ -196,6 +196,8 @@ func (s *Server) registerRoutes() {
 		api.GET("/site-settings", s.handleSiteSettingsGet)
 		api.PUT("/site-settings", s.AuthMiddleware(), s.AdminMiddleware(), s.handleSiteSettingsUpdate)
 		api.POST("/site-settings/icon", s.AuthMiddleware(), s.AdminMiddleware(), s.handleSiteIconUpload)
+		api.POST("/site-settings/apple-push-cert", s.AuthMiddleware(), s.AdminMiddleware(), s.handleApplePushCertificateUpload)
+		api.DELETE("/site-settings/apple-push-cert", s.AuthMiddleware(), s.AdminMiddleware(), s.handleApplePushCertificateDelete)
 		api.GET("/me", s.AuthMiddleware(), s.handleMe)
 		api.GET("/login-history", s.AuthMiddleware(), s.handleLoginHistory)
 		api.POST("/markdown", s.AuthMiddleware(), s.handleMarkdownSubmit)

@@ -1,4 +1,4 @@
-import { beginPasskeyRegistration, createTag, deleteEntry, fetchEntries, fetchEntry, fetchLoginHistory, fetchSiteSettings, fetchTags, finishPasskeyRegistration, removeTag, updateSiteSettings, updateTag, uploadSiteIcon, uploadUserIcon, } from "./api/dashboard.js";
+import { beginPasskeyRegistration, createTag, deleteApplePushCertificate, deleteEntry, fetchEntries, fetchEntry, fetchLoginHistory, fetchSiteSettings, fetchTags, finishPasskeyRegistration, removeTag, updateSiteSettings, updateTag, uploadApplePushCertificate, uploadSiteIcon, uploadUserIcon, } from "./api/dashboard.js";
 import { fetchCurrentUser, logout } from "./api/session.js";
 import { formatDeviceType } from "./lib/client.js";
 import { makeDefaultAvatar } from "./lib/avatar.js";
@@ -54,6 +54,12 @@ const saveSiteBtn = byId("saveSiteBtn");
 const siteStatus = byId("siteStatus");
 const siteIconPreview = byId("siteIconPreview");
 const siteIconFile = byId("siteIconFile");
+const applePushDevFile = byId("applePushDevFile");
+const applePushProdFile = byId("applePushProdFile");
+const applePushDevMeta = byId("applePushDevMeta");
+const applePushProdMeta = byId("applePushProdMeta");
+const applePushDevDeleteBtn = byId("applePushDevDeleteBtn");
+const applePushProdDeleteBtn = byId("applePushProdDeleteBtn");
 const siteAddTagBtnProxy = byId("siteAddTagBtnProxy");
 const tagList = byId("tagList");
 const iconCtx = iconCanvas.getContext("2d");
@@ -111,11 +117,22 @@ function formatLoginMethod(method) {
 function defaultSiteIcon(name) {
     return makeDefaultAvatar(name || "站", 160);
 }
+function formatCertificateMeta(cert) {
+    if (!cert?.file_name) {
+        return "未上传";
+    }
+    const uploadedAt = cert.uploaded_at ? new Date(cert.uploaded_at).toLocaleString() : "未知时间";
+    return `当前文件：${cert.file_name} · 上传时间：${uploadedAt}`;
+}
 function renderSiteSettings(site) {
     const safeSite = site || { name: "Polar-", description: "", icon_url: "" };
     siteNameInput.value = safeSite.name || "Polar-";
     siteDescriptionInput.value = safeSite.description || "";
     siteIconPreview.src = safeSite.icon_url || defaultSiteIcon(safeSite.name || "Polar-");
+    applePushDevMeta.textContent = formatCertificateMeta(safeSite.apple_push_dev_cert);
+    applePushProdMeta.textContent = formatCertificateMeta(safeSite.apple_push_prod_cert);
+    applePushDevDeleteBtn.disabled = !safeSite.apple_push_dev_cert?.file_url;
+    applePushProdDeleteBtn.disabled = !safeSite.apple_push_prod_cert?.file_url;
     renderSiteBrand(safeSite);
 }
 function renderTagList(tags) {
@@ -448,6 +465,66 @@ siteIconFile.addEventListener("change", async () => {
     finally {
         siteIconFile.value = "";
     }
+});
+async function handleApplePushCertificateUpload(environment, fileInput) {
+    const file = fileInput.files?.[0];
+    if (!file) {
+        return;
+    }
+    const lowerName = file.name.toLowerCase();
+    if (![".p8", ".p12", ".pem", ".cer", ".crt", ".key"].some((ext) => lowerName.endsWith(ext))) {
+        siteStatus.textContent = "仅支持 .p8、.p12、.pem、.cer、.crt、.key 文件";
+        fileInput.value = "";
+        return;
+    }
+    siteStatus.textContent = `正在上传 ${environment} Apple Push 证书...`;
+    const formData = new FormData();
+    formData.append("certificate", file);
+    try {
+        const { response, data } = await uploadApplePushCertificate(environment, formData);
+        if (!response.ok) {
+            siteStatus.textContent = data.error || "上传失败";
+            return;
+        }
+        renderSiteSettings(data.site);
+        siteStatus.textContent = `${environment} Apple Push 证书已更新`;
+    }
+    catch {
+        siteStatus.textContent = "网络错误，请重试";
+    }
+    finally {
+        fileInput.value = "";
+    }
+}
+async function handleApplePushCertificateDelete(environment) {
+    if (!window.confirm(`确定删除 ${environment} Apple Push 证书吗？`)) {
+        return;
+    }
+    siteStatus.textContent = `正在删除 ${environment} Apple Push 证书...`;
+    try {
+        const { response, data } = await deleteApplePushCertificate(environment);
+        if (!response.ok) {
+            siteStatus.textContent = data.error || "删除失败";
+            return;
+        }
+        renderSiteSettings(data.site);
+        siteStatus.textContent = `${environment} Apple Push 证书已删除`;
+    }
+    catch {
+        siteStatus.textContent = "网络错误，请重试";
+    }
+}
+applePushDevFile.addEventListener("change", async () => {
+    await handleApplePushCertificateUpload("dev", applePushDevFile);
+});
+applePushProdFile.addEventListener("change", async () => {
+    await handleApplePushCertificateUpload("prod", applePushProdFile);
+});
+applePushDevDeleteBtn.addEventListener("click", async () => {
+    await handleApplePushCertificateDelete("dev");
+});
+applePushProdDeleteBtn.addEventListener("click", async () => {
+    await handleApplePushCertificateDelete("prod");
 });
 logoutBtn.addEventListener("click", async () => {
     logoutBtn.disabled = true;

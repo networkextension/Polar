@@ -43,6 +43,17 @@ export async function uploadSiteIcon(formData) {
         body: formData,
     });
 }
+export async function uploadApplePushCertificate(environment, formData) {
+    return requestJson(`/api/site-settings/apple-push-cert?env=${environment}`, {
+        method: "POST",
+        body: formData,
+    });
+}
+export async function deleteApplePushCertificate(environment) {
+    return requestJson(`/api/site-settings/apple-push-cert?env=${environment}`, {
+        method: "DELETE",
+    });
+}
 export async function deleteEntry(id) {
     return request(`/api/markdown/${id}`, {
         method: "DELETE",

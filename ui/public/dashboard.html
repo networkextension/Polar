@@ -177,6 +177,33 @@
           <div class="site-tags-section">
             <div class="site-tags-header">
               <div>
+                <div class="badge">Apple Push 证书</div>
+                <p class="drawer-help">为后续 APNs 推送预先维护开发环境与生产环境证书。</p>
+              </div>
+            </div>
+            <div class="site-admin-grid">
+              <div class="site-settings-form">
+                <label class="form-label" for="applePushDevFile">开发环境证书（dev）</label>
+                <input id="applePushDevFile" class="input" type="file" accept=".p8,.p12,.pem,.cer,.crt,.key" />
+                <p id="applePushDevMeta" class="drawer-help">未上传</p>
+                <div class="site-settings-actions">
+                  <button id="applePushDevDeleteBtn" class="btn-inline btn-secondary" type="button">删除 dev 证书</button>
+                </div>
+              </div>
+              <div class="site-settings-form">
+                <label class="form-label" for="applePushProdFile">生产环境证书（prod）</label>
+                <input id="applePushProdFile" class="input" type="file" accept=".p8,.p12,.pem,.cer,.crt,.key" />
+                <p id="applePushProdMeta" class="drawer-help">未上传</p>
+                <div class="site-settings-actions">
+                  <button id="applePushProdDeleteBtn" class="btn-inline btn-secondary" type="button">删除 prod 证书</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="site-tags-section">
+            <div class="site-tags-header">
+              <div>
                 <div class="badge">Tag 管理</div>
                 <p class="drawer-help">可新增、编辑或删除站点内的内容标签。</p>
               </div>
