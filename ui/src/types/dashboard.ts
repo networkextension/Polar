@@ -99,11 +99,14 @@ export type LLMConfigPayload = {
   model: string;
   api_key?: string;
   system_prompt: string;
+  shared?: boolean;
 };
 
 export type LLMConfig = {
   id: number;
   owner_user_id: string;
+  share_id: string;
+  shared: boolean;
   name: string;
   base_url: string;
   model: string;

@@ -57,8 +57,10 @@ export type LLMThread = {
 
 export type ChatLLMConfig = {
   id: number;
+  owner_user_id: string;
   name: string;
   model: string;
+  shared: boolean;
 };
 
 export type LLMThreadListResponse = {

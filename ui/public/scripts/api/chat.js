@@ -42,7 +42,7 @@ export async function switchLLMThreadConfig(threadId, llmThreadId, llmConfigId) 
     });
 }
 export async function fetchChatLLMConfigs() {
-    return requestJson("/api/llm-configs");
+    return requestJson("/api/llm-configs/available");
 }
 export async function fetchSharedMarkdown(threadId, messageId) {
     return requestJson(`/api/chats/${threadId}/messages/${messageId}/markdown`);

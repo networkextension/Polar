@@ -58,7 +58,7 @@ export async function switchLLMThreadConfig(threadId: string, llmThreadId: numbe
 }
 
 export async function fetchChatLLMConfigs() {
-  return requestJson<ChatLLMConfigListResponse>("/api/llm-configs");
+  return requestJson<ChatLLMConfigListResponse>("/api/llm-configs/available");
 }
 
 export async function fetchSharedMarkdown(threadId: string, messageId: string) {
