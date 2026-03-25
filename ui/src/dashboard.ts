@@ -151,7 +151,7 @@ let editingLLMConfigId: number | null = null;
 let editingBotUserId: number | null = null;
 let currentLLMConfigs: LLMConfig[] = [];
 let currentBotUsers: BotUser[] = [];
-let activeSettingsSection: "profile" | "personalization" | "settings" | "bots" = "personalization";
+let activeSettingsSection: "profile" | "personalization" | "settings" | "bots" | "site" = "personalization";
 
 function setModalOpen(modal: HTMLElement, open: boolean): void {
   modal.classList.toggle("open", open);
@@ -183,7 +183,7 @@ function syncThemeButton(theme: ThemeName): void {
   themeCurrentValue.textContent = theme === "mono" ? "黑白" : "默认";
 }
 
-function switchSettingsSection(section: "profile" | "personalization" | "settings" | "bots"): void {
+function switchSettingsSection(section: "profile" | "personalization" | "settings" | "bots" | "site"): void {
   activeSettingsSection = section;
   const titles: Record<typeof activeSettingsSection, { title: string; lead: string }> = {
     profile: {
@@ -195,12 +195,16 @@ function switchSettingsSection(section: "profile" | "personalization" | "setting
       lead: "管理界面风格和个人偏好，让工作台更贴近你的使用习惯。",
     },
     settings: {
-      title: "LLM Config",
-      lead: "管理模型地址、API Key、Model 和配置连通性测试。",
+      title: "设置",
+      lead: "管理 LLM Config，以及管理员可见的站点 logo、intro、iOS Push 证书和 Tag。",
     },
     bots: {
       title: "Bot 管理",
       lead: "在这里维护 Bot 的默认模型配置、简介和专属 Prompt。",
+    },
+    site: {
+      title: "站点管理",
+      lead: "管理员可见的站点 logo、intro、iOS Push 证书和 Tag 管理项。",
     },
   };
   settingsPanels.forEach((panel) => {
@@ -419,6 +423,11 @@ async function loadProfile(): Promise<void> {
   addTagBtn.textContent = isAdmin ? "新建 Tag" : "仅管理员可新建 Tag";
   addTagBtn.hidden = !isAdmin;
   siteAdminPanel.hidden = !isAdmin;
+  settingsNavButtons.forEach((button) => {
+    if (button.dataset.settingsNav === "site") {
+      button.hidden = !isAdmin;
+    }
+  });
 
   const avatar = data.icon_url || makeDefaultAvatar(data.username || "U", 160);
   if (data.icon_url) {
