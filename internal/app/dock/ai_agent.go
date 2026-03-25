@@ -124,6 +124,10 @@ func (a *aiAgent) handleTask(task aiAgentTask) {
 	if err != nil {
 		log.Printf("ai agent reply failed: %v", err)
 		reply = "我暂时无法完成这次处理，请稍后再试。"
+		if _, sendErr := a.server.sendFailedBotMessage(task.ThreadID, task.LLMThreadID, task.ResponderUserID, task.ResponderName, reply, time.Now()); sendErr != nil {
+			log.Printf("send failed ai agent chat message failed: %v", sendErr)
+		}
+		return
 	}
 	reply = strings.TrimSpace(reply)
 	if reply == "" {
@@ -145,7 +149,7 @@ func (a *aiAgent) handleTask(task aiAgentTask) {
 }
 
 func (a *aiAgent) generateReply(task aiAgentTask) (string, error) {
-	runtimeConfig, err := a.runtimeConfig(task.ResponderUserID)
+	runtimeConfig, err := a.runtimeConfig(task.ThreadID, task.LLMThreadID, task.ResponderUserID)
 	if err != nil {
 		return "", err
 	}
@@ -253,7 +257,7 @@ func (a *aiAgent) requestChatCompletion(runtimeConfig aiRuntimeConfig, payload a
 	return &result, nil
 }
 
-func (a *aiAgent) runtimeConfig(responderUserID string) (aiRuntimeConfig, error) {
+func (a *aiAgent) runtimeConfig(threadID int64, llmThreadID *int64, responderUserID string) (aiRuntimeConfig, error) {
 	if responderUserID == systemUserID {
 		return aiRuntimeConfig{
 			APIKey:       strings.TrimSpace(a.apiKey),
@@ -263,14 +267,37 @@ func (a *aiAgent) runtimeConfig(responderUserID string) (aiRuntimeConfig, error)
 		}, nil
 	}
 
-	item, apiKey, err := a.server.getLLMConfigForBot(responderUserID)
+	botUser, err := a.server.getBotUserByUserID(responderUserID)
+	if err != nil {
+		return aiRuntimeConfig{}, err
+	}
+	if botUser == nil {
+		return aiRuntimeConfig{}, fmt.Errorf("bot config not found for %s", responderUserID)
+	}
+
+	var (
+		item   *LLMConfig
+		apiKey string
+	)
+	if llmThreadID != nil && *llmThreadID > 0 {
+		item, apiKey, err = a.server.getLLMConfigForThread(threadID, *llmThreadID, responderUserID)
+		if err != nil {
+			return aiRuntimeConfig{}, err
+		}
+		if item == nil {
+			return aiRuntimeConfig{}, fmt.Errorf("thread llm config not found for thread %d responder %s", *llmThreadID, responderUserID)
+		}
+	}
+	if item == nil {
+		item, apiKey, err = a.server.getLLMConfigForBot(responderUserID)
+	}
 	if err != nil {
 		return aiRuntimeConfig{}, err
 	}
 	if item == nil {
 		return aiRuntimeConfig{}, fmt.Errorf("bot llm config not found for %s", responderUserID)
 	}
-	systemPrompt := strings.TrimSpace(item.SystemPrompt)
+	systemPrompt := strings.TrimSpace(botUser.SystemPrompt)
 	if systemPrompt == "" {
 		systemPrompt = "你是站内的 AI 助手，请基于上下文和当前问题，用清晰、可靠、结构化的中文回复。"
 	}
@@ -330,13 +357,17 @@ func parseAIErrorMessage(raw json.RawMessage) string {
 
 func (a *aiAgent) buildContext(threadID int64, llmThreadID *int64) (string, error) {
 	var parts []string
-	parts = append(parts, "以下是程序运行目录中的文档摘要和当前私聊上下文。")
+	if llmThreadID == nil {
+		parts = append(parts, "以下是程序运行目录中的文档摘要和当前私聊上下文。")
 
-	docText, err := a.loadRuntimeDocuments()
-	if err != nil {
-		parts = append(parts, "文档读取失败："+err.Error())
-	} else if docText != "" {
-		parts = append(parts, docText)
+		docText, err := a.loadRuntimeDocuments()
+		if err != nil {
+			parts = append(parts, "文档读取失败："+err.Error())
+		} else if docText != "" {
+			parts = append(parts, docText)
+		}
+	} else {
+		parts = append(parts, "以下是当前话题的私聊上下文。")
 	}
 
 	messages, err := a.server.listRecentChatMessages(threadID, llmThreadID, 12)

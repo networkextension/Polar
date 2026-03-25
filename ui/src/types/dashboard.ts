@@ -121,6 +121,7 @@ export type LLMConfigListResponse = ErrorResponse & {
 export type BotPayload = {
   name: string;
   description: string;
+  system_prompt: string;
   llm_config_id: number;
 };
 
@@ -130,6 +131,7 @@ export type BotUser = {
   bot_user_id: string;
   name: string;
   description: string;
+  system_prompt: string;
   llm_config_id: number;
   config_name: string;
   created_at: string;

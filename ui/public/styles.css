@@ -201,6 +201,20 @@ button:hover {
   box-shadow: 0 10px 20px var(--secondary-shadow);
 }
 
+.message-failure-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: color-mix(in srgb, var(--danger) 82%, white 18%);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .link {
   display: block;
   text-align: center;
@@ -510,6 +524,10 @@ button:hover {
   margin-top: 12px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
+}
+
+.drawer-footer .group-card {
+  margin-bottom: 0;
 }
 
 .drawer-section {
@@ -1717,6 +1735,42 @@ textarea {
   margin-bottom: 0;
 }
 
+.chat-model-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-model-copy {
+  min-width: 0;
+}
+
+.chat-model-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chat-model-current {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.chat-model-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-model-select {
+  min-width: 240px;
+  margin-bottom: 0;
+}
+
 .chat-title {
   font-size: 18px;
   font-weight: 700;
@@ -1899,6 +1953,13 @@ textarea {
 }
 
 .message-markdown-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.message-inline-actions {
+  margin-top: 10px;
   display: flex;
   gap: 8px;
   flex-wrap: wrap;

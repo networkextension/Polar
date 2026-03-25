@@ -44,6 +44,7 @@
             </div>
             <div class="inline-actions">
               <button id="chatNewTopicBtn" class="btn-inline btn-secondary" type="button" hidden>新话题</button>
+              <button id="chatRenameTopicBtn" class="btn-inline btn-secondary" type="button" hidden>重命名</button>
               <button id="chatRefreshBtn" class="btn-inline btn-secondary" type="button">刷新</button>
             </div>
           </div>
@@ -51,6 +52,16 @@
             <label class="form-label chat-topic-label" for="chatThreadSelect">当前话题</label>
             <div class="chat-topic-controls">
               <select id="chatThreadSelect" class="input chat-topic-select"></select>
+            </div>
+            <div id="chatModelBar" class="chat-model-bar" hidden>
+              <div class="chat-model-copy">
+                <div class="chat-model-label">当前模型</div>
+                <div id="chatModelCurrent" class="chat-model-current">跟随默认配置</div>
+              </div>
+              <div class="chat-model-controls">
+                <select id="chatModelSelect" class="input chat-model-select"></select>
+                <button id="chatSwitchModelBtn" class="btn-inline btn-secondary" type="button">切换模型</button>
+              </div>
             </div>
           </div>
           <div id="messageList" class="message-list"></div>

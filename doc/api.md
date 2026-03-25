@@ -434,6 +434,10 @@
 - 建议先调用“测试配置”确认连通，再保存配置
 - 每个 Bot 都会对应一个可私聊的 `user_id`
 - Bot 与官方 `system` 助理共用同一套私聊入口，但运行时配置来源不同
+- 当前推荐的职责划分：
+  - `LLM Config`：保存 `Base URL / Model / API Key` 等连接信息
+  - `Bot User`：保存 Bot 的默认 `LLM Config` 和运行时 `system_prompt`
+  - `llm_thread`：只负责切换当前话题使用哪个 `LLM Config`
 
 ### 获取 LLM Config 列表
 
@@ -451,7 +455,6 @@
       "name": "OpenAI 生产配置",
       "base_url": "https://api.openai.com/v1/chat/completions",
       "model": "gpt-4.1-mini",
-      "system_prompt": "你是一个活动策划助手。",
       "has_api_key": true,
       "created_at": "2026-03-24T12:00:00+08:00",
       "updated_at": "2026-03-24T12:00:00+08:00"
@@ -471,6 +474,7 @@
 - 直接使用本次请求体进行模型连通性测试
 - 不会写入数据库
 - 适合在前端“保存配置”前先检测 `Base URL / Model / API Key` 是否可用
+- `system_prompt` 在这里仅用于测试时构造一轮请求，不会保存为 Bot 的运行时 Prompt
 
 请求体：
 ```json
@@ -508,8 +512,7 @@
   "name": "OpenAI 生产配置",
   "base_url": "https://api.openai.com/v1/chat/completions",
   "model": "gpt-4.1-mini",
-  "api_key": "sk-xxx",
-  "system_prompt": "你是一个活动策划助手。"
+  "api_key": "sk-xxx"
 }
 ```
 
@@ -523,7 +526,6 @@
     "name": "OpenAI 生产配置",
     "base_url": "https://api.openai.com/v1/chat/completions",
     "model": "gpt-4.1-mini",
-    "system_prompt": "你是一个活动策划助手。",
     "has_api_key": true,
     "created_at": "2026-03-24T12:00:00+08:00",
     "updated_at": "2026-03-24T12:00:00+08:00"
@@ -544,15 +546,14 @@
   "base_url": "https://api.openai.com/v1/chat/completions",
   "model": "gpt-4.1-mini",
   "api_key": "sk-new",
-  "update_api_key": true,
-  "system_prompt": "你是一个活动策划助手。"
+  "update_api_key": true
 }
 ```
 
 说明：
 
 - `update_api_key = false` 或不传时，服务端保持原有 key 不变
-- 编辑已有配置时可只改 `name/base_url/model/system_prompt`
+- 编辑已有配置时可只改 `name/base_url/model`
 
 ### 删除 LLM Config
 
@@ -587,6 +588,7 @@
       "bot_user_id": "bot_abcd1234efgh5678",
       "name": "翻译助手",
       "description": "负责中英文翻译和润色",
+      "system_prompt": "你是一个专业翻译助手，请优先保持原意，再兼顾自然表达。",
       "llm_config_id": 3,
       "config_name": "OpenAI 生产配置",
       "created_at": "2026-03-24T12:10:00+08:00",
@@ -607,6 +609,7 @@
 {
   "name": "翻译助手",
   "description": "负责中英文翻译和润色",
+  "system_prompt": "你是一个专业翻译助手，请优先保持原意，再兼顾自然表达。",
   "llm_config_id": 3
 }
 ```
@@ -1353,6 +1356,7 @@ curl -X POST http://localhost:3000/api/posts \
 - 用于列出当前 AI 会话下的话题列表
 - `active_thread_id` 可选，用于指定当前激活话题
 - 若当前会话尚无话题，服务端会按需要返回默认话题
+- `llm_config_id / config_name / config_model` 表示这个话题当前实际使用的模型配置
 
 成功响应：
 ```json
@@ -1363,6 +1367,9 @@ curl -X POST http://localhost:3000/api/posts \
       "chat_thread_id": 12,
       "owner_user_id": "u_018",
       "bot_user_id": "bot_translate_01",
+      "llm_config_id": 3,
+      "config_name": "OpenAI 生产配置",
+      "config_model": "gpt-4.1-mini",
       "title": "合同翻译",
       "created_at": "2026-03-25T09:00:00+08:00",
       "updated_at": "2026-03-25T09:10:00+08:00",
@@ -1374,6 +1381,9 @@ curl -X POST http://localhost:3000/api/posts \
     "chat_thread_id": 12,
     "owner_user_id": "u_018",
     "bot_user_id": "bot_translate_01",
+    "llm_config_id": 3,
+    "config_name": "OpenAI 生产配置",
+    "config_model": "gpt-4.1-mini",
     "title": "合同翻译",
     "created_at": "2026-03-25T09:00:00+08:00",
     "updated_at": "2026-03-25T09:10:00+08:00",
@@ -1423,6 +1433,48 @@ curl -X POST http://localhost:3000/api/posts \
 ```json
 {
   "title": "报价整理"
+}
+```
+
+### 切换 Bot 话题模型配置
+
+**PUT** `/api/chats/:id/llm-threads/:threadId/config`
+
+权限要求：会话参与者且该话题对端必须是用户自建 `bot user`
+
+说明：
+
+- 只切换当前 `llm_thread` 使用的 `LLM Config`
+- 不会修改 Bot 自身的默认配置
+- 不会影响该 Bot 的其他话题
+- 只影响后续回复，不会重跑历史消息
+- Bot 的运行时 `system_prompt` 不跟随这里切换，仍然来自 Bot 自身配置
+
+请求体：
+```json
+{
+  "llm_config_id": 4
+}
+```
+
+成功响应：
+```json
+{
+  "message": "当前话题模型已切换，后续回复将使用新配置",
+  "thread": {
+    "id": 22,
+    "chat_thread_id": 12,
+    "owner_user_id": "u_018",
+    "bot_user_id": "bot_translate_01",
+    "llm_config_id": 4,
+    "config_name": "Qwen 备用配置",
+    "config_model": "qwen-plus",
+    "title": "报价整理",
+    "created_at": "2026-03-25T09:30:00+08:00",
+    "updated_at": "2026-03-25T09:40:00+08:00",
+    "last_message_at": "2026-03-25T09:34:00+08:00"
+  },
+  "threads": []
 }
 ```
 

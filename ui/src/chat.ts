@@ -1,4 +1,4 @@
-import { createLLMThread, fetchChats, fetchLLMThreads, fetchMessages, fetchSharedMarkdown, revokeMessage as revokeChatMessage, sendMessage, startChat } from "./api/chat.js";
+import { createLLMThread, fetchChatLLMConfigs, fetchChats, fetchLLMThreads, fetchMessages, fetchSharedMarkdown, retryMessage, revokeMessage as revokeChatMessage, sendMessage, startChat, switchLLMThreadConfig, updateLLMThread } from "./api/chat.js";
 import { requestJson } from "./api/http.js";
 import { fetchCurrentUser } from "./api/session.js";
 import { resolveAvatar } from "./lib/avatar.js";
@@ -7,7 +7,7 @@ import { byId } from "./lib/dom.js";
 import { renderMarkdown } from "./lib/marked.js";
 import { hydrateSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme } from "./lib/theme.js";
-import type { ChatEventPayload, ChatMessage, ChatSummary, LLMThread } from "./types/chat.js";
+import type { ChatEventPayload, ChatLLMConfig, ChatMessage, ChatSummary, LLMThread } from "./types/chat.js";
 const chatWelcome = byId<HTMLElement>("chatWelcome");
 const chatList = byId<HTMLElement>("chatList");
 const chatTitle = byId<HTMLElement>("chatTitle");
@@ -17,8 +17,13 @@ const messageForm = byId<HTMLFormElement>("messageForm");
 const messageInput = byId<HTMLInputElement>("messageInput");
 const chatRefreshBtn = byId<HTMLButtonElement>("chatRefreshBtn");
 const chatNewTopicBtn = byId<HTMLButtonElement>("chatNewTopicBtn");
+const chatRenameTopicBtn = byId<HTMLButtonElement>("chatRenameTopicBtn");
 const chatThreadBar = byId<HTMLElement>("chatThreadBar");
 const chatThreadSelect = byId<HTMLSelectElement>("chatThreadSelect");
+const chatModelBar = byId<HTMLElement>("chatModelBar");
+const chatModelCurrent = byId<HTMLElement>("chatModelCurrent");
+const chatModelSelect = byId<HTMLSelectElement>("chatModelSelect");
+const chatSwitchModelBtn = byId<HTMLButtonElement>("chatSwitchModelBtn");
 
 let currentUserId = "";
 let activeThreadId: string | null = null;
@@ -31,6 +36,8 @@ let activeMessageLoadedAt = "";
 let activeLLMThreadId: number | null = null;
 let activeLLMThreads: LLMThread[] = [];
 let activeIsAIChat = false;
+let activeIsBotChat = false;
+let currentLLMConfigs: ChatLLMConfig[] = [];
 const expandedMarkdownMessages = new Set<string>();
 const sharedMarkdownContentCache = new Map<string, string>();
 const sharedMarkdownLoading = new Set<string>();
@@ -127,25 +134,72 @@ function isAIChat(chat?: ChatSummary | null): boolean {
   return chat.other_user_id === "system" || chat.other_user_id.startsWith("bot_");
 }
 
+function isBotChat(chat?: ChatSummary | null): boolean {
+  if (!chat) {
+    return false;
+  }
+  return chat.other_user_id.startsWith("bot_");
+}
+
 function renderLLMThreadBar(): void {
   chatThreadBar.hidden = !activeIsAIChat;
   chatNewTopicBtn.hidden = !activeIsAIChat;
+  chatRenameTopicBtn.hidden = !activeIsAIChat;
   if (!activeIsAIChat) {
     chatThreadSelect.innerHTML = "";
+    chatModelBar.hidden = true;
     return;
   }
   if (!activeLLMThreads.length) {
     chatThreadSelect.innerHTML = `<option value="">默认话题</option>`;
     chatThreadSelect.disabled = true;
+    chatRenameTopicBtn.disabled = true;
+    renderLLMThreadModelBar();
     return;
   }
   chatThreadSelect.disabled = false;
+  chatRenameTopicBtn.disabled = !activeLLMThreadId;
   chatThreadSelect.innerHTML = activeLLMThreads
     .map((thread) => `<option value="${thread.id}">${escapeHtml(thread.title || "新话题")}</option>`)
     .join("");
   if (activeLLMThreadId) {
     chatThreadSelect.value = String(activeLLMThreadId);
   }
+  renderLLMThreadModelBar();
+}
+
+function renderLLMThreadModelBar(): void {
+  chatModelBar.hidden = !activeIsBotChat;
+  if (!activeIsBotChat) {
+    chatModelCurrent.textContent = "官方 system 助理";
+    chatModelSelect.innerHTML = "";
+    chatSwitchModelBtn.disabled = true;
+    return;
+  }
+  const activeThread = activeLLMThreads.find((thread) => thread.id === activeLLMThreadId) || null;
+  if (!activeThread) {
+    chatModelCurrent.textContent = "未选择话题";
+    chatModelSelect.innerHTML = `<option value="">请先选择话题</option>`;
+    chatSwitchModelBtn.disabled = true;
+    return;
+  }
+  chatModelCurrent.textContent = activeThread.config_name
+    ? `${activeThread.config_name}${activeThread.config_model ? ` · ${activeThread.config_model}` : ""}`
+    : "跟随 Bot 默认配置";
+  if (!currentLLMConfigs.length) {
+    chatModelSelect.innerHTML = `<option value="">暂无可用配置</option>`;
+    chatSwitchModelBtn.disabled = true;
+    return;
+  }
+  chatModelSelect.innerHTML = currentLLMConfigs
+    .map((config) => `<option value="${config.id}">${escapeHtml(config.name)} · ${escapeHtml(config.model)}</option>`)
+    .join("");
+  if (activeThread.llm_config_id && currentLLMConfigs.some((config) => config.id === activeThread.llm_config_id)) {
+    chatModelSelect.value = String(activeThread.llm_config_id);
+  } else if (currentLLMConfigs[0]) {
+    chatModelSelect.value = String(currentLLMConfigs[0].id);
+  }
+  chatSwitchModelBtn.disabled = activeThread.llm_config_id != null && chatModelSelect.value === String(activeThread.llm_config_id);
 }
 
 function getMessageMarker(message?: ChatMessage | null): string {
@@ -181,6 +235,16 @@ function markMessageRevoked(messageId: string): boolean {
     deleted: true,
     content: target.content || "",
   };
+  activeMessages = nextMessages;
+  updateActiveMessageLoadedAt(activeMessages);
+  return true;
+}
+
+function removeMessageIfNeeded(messageId: string): boolean {
+  const nextMessages = activeMessages.filter((item) => item.id !== messageId);
+  if (nextMessages.length === activeMessages.length) {
+    return false;
+  }
   activeMessages = nextMessages;
   updateActiveMessageLoadedAt(activeMessages);
   return true;
@@ -308,9 +372,11 @@ async function startChatWithUser(userId: string): Promise<ChatSummary | null> {
 async function loadLLMThreads(threadId: string, preferredThreadId?: number | null): Promise<void> {
   const chat = chatCache.find((item) => item.id === threadId);
   activeIsAIChat = isAIChat(chat);
+  activeIsBotChat = isBotChat(chat);
   if (!activeIsAIChat) {
     activeLLMThreadId = null;
     activeLLMThreads = [];
+    currentLLMConfigs = [];
     renderLLMThreadBar();
     return;
   }
@@ -329,6 +395,23 @@ async function loadLLMThreads(threadId: string, preferredThreadId?: number | nul
   renderLLMThreadBar();
 }
 
+async function loadChatLLMConfigs(): Promise<void> {
+  if (!activeIsBotChat) {
+    currentLLMConfigs = [];
+    renderLLMThreadModelBar();
+    return;
+  }
+  const { response, data } = await fetchChatLLMConfigs();
+  if (!response.ok) {
+    currentLLMConfigs = [];
+    chatSubtitle.textContent = data.error || "无法加载模型配置";
+    renderLLMThreadModelBar();
+    return;
+  }
+  currentLLMConfigs = data.configs || [];
+  renderLLMThreadModelBar();
+}
+
 function renderMessages(messages: ChatMessage[]): void {
   activeMessages = messages;
   updateActiveMessageLoadedAt(messages);
@@ -341,19 +424,31 @@ function renderMessages(messages: ChatMessage[]): void {
     .map((msg) => {
       const isMine = msg.sender_id === currentUserId;
       const isSystem = msg.sender_id === "system";
+      const isBotReply = !isMine && (msg.sender_id === "system" || msg.sender_id.startsWith("bot_"));
+      const isFailedBotReply = isBotReply && Boolean(msg.failed) && !msg.deleted;
       const isSharedMarkdown = msg.message_type === "shared_markdown" && Boolean(msg.markdown_entry_id);
       const isExpanded = expandedMarkdownMessages.has(String(msg.id));
       const expandedContent = sharedMarkdownContentCache.get(String(msg.id)) || "";
       const isLoadingExpanded = sharedMarkdownLoading.has(String(msg.id));
+      const retryAction = isFailedBotReply
+        ? `<button class="btn-inline btn-secondary message-retry" data-id="${msg.id}" type="button">Retry</button>`
+        : "";
+      const failureBadge = isFailedBotReply
+        ? `<div class="message-failure-badge">发送失败，可重试</div>`
+        : "";
       const markdownActions = isSharedMarkdown
         ? `
             <div class="message-markdown-actions">
               <button class="btn-inline btn-secondary message-expand" data-id="${msg.id}" type="button">${isExpanded ? "缩小" : "放大"}</button>
+              ${retryAction}
               <button class="btn-inline btn-secondary message-copy" data-id="${msg.id}" type="button">复制</button>
               <button class="btn-inline btn-secondary message-public-share" data-id="${msg.id}" type="button">公开分享</button>
               <button class="btn-inline btn-secondary message-favorite" data-id="${msg.id}" type="button">收藏</button>
             </div>
           `
+        : "";
+      const textActions = !isSharedMarkdown && retryAction
+        ? `<div class="message-inline-actions">${retryAction}</div>`
         : "";
       const content = msg.deleted
         ? "消息已撤回"
@@ -380,14 +475,21 @@ function renderMessages(messages: ChatMessage[]): void {
           ? `<button class="message-revoke" data-id="${msg.id}" type="button">撤回</button>`
           : "";
       const avatar = resolveAvatar(msg.sender_username, msg.sender_icon, 48);
+      const activeThread = activeLLMThreads.find((thread) => thread.id === (msg.llm_thread_id || activeLLMThreadId)) || null;
+      const botModelMeta = isBotReply
+        ? (activeThread?.config_model || activeThread?.config_name || "LLM")
+        : "";
+      const messageMeta = isBotReply
+        ? `${msg.sender_username} · ${botModelMeta} · ${formatTime(msg.created_at)}${isFailedBotReply ? " · 失败" : ""}`
+        : `${msg.sender_username} · ${formatTime(msg.created_at)}`;
       return `
         <div class="message-item ${isMine ? "mine" : "other"}">
           <div class="message-head">
             <img class="avatar-xs" src="${avatar}" alt="${msg.sender_username}" />
-            <div class="message-meta">${msg.sender_username} · ${formatTime(msg.created_at)}</div>
+            <div class="message-meta">${messageMeta}</div>
           </div>
           <div class="message-row">
-            <div class="${bubbleClass}"><div class="${contentClass}">${content}</div></div>
+            <div class="${bubbleClass}"><div class="${contentClass}">${content}</div>${failureBadge}${textActions}</div>
             ${revokeButton}
           </div>
         </div>
@@ -402,6 +504,32 @@ function renderMessages(messages: ChatMessage[]): void {
         return;
       }
       await revokeMessage(messageId);
+    });
+  });
+  messageList.querySelectorAll<HTMLButtonElement>(".message-retry").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (!activeThreadId) {
+        return;
+      }
+      const messageId = button.dataset.id;
+      if (!messageId) {
+        return;
+      }
+      button.disabled = true;
+      chatSubtitle.textContent = "正在重试上一条用户消息...";
+      try {
+        const { response, data } = await retryMessage(activeThreadId, messageId);
+        if (!response.ok) {
+          chatSubtitle.textContent = data.error || "重试失败";
+          return;
+        }
+        if (removeMessageIfNeeded(messageId)) {
+          renderMessages(activeMessages);
+        }
+        chatSubtitle.textContent = data.message || "已重新提交上一条用户消息";
+      } finally {
+        button.disabled = false;
+      }
     });
   });
   messageList.querySelectorAll<HTMLButtonElement>(".message-copy").forEach((button) => {
@@ -557,6 +685,7 @@ async function openChat(chat: ChatSummary): Promise<void> {
   messageInput.disabled = false;
   renderChatList(chatCache);
   await loadLLMThreads(chat.id);
+  await loadChatLLMConfigs();
   await loadMessages(chat.id);
   await loadChats(chat.id);
 }
@@ -670,7 +799,10 @@ function connectWebSocket(): void {
 
     if (payload.type === "revoke") {
       if (activeThreadId === chatId && chatId && payload.message_id) {
-        if (markMessageRevoked(payload.message_id)) {
+        const handled = payload.user_id === "retry"
+          ? removeMessageIfNeeded(payload.message_id)
+          : markMessageRevoked(payload.message_id);
+        if (handled) {
           renderMessages(activeMessages);
         } else {
           await loadMessages(chatId);
@@ -718,6 +850,7 @@ chatThreadSelect.addEventListener("change", async () => {
   }
   const nextID = Number(chatThreadSelect.value || 0);
   activeLLMThreadId = nextID > 0 ? nextID : null;
+  renderLLMThreadModelBar();
   activeMessageLoadedAt = "";
   await loadMessages(activeThreadId);
 });
@@ -740,6 +873,54 @@ chatNewTopicBtn.addEventListener("click", async () => {
   if (activeThreadId) {
     await loadMessages(activeThreadId);
   }
+});
+
+chatRenameTopicBtn.addEventListener("click", async () => {
+  if (!activeThreadId || !activeLLMThreadId) {
+    return;
+  }
+  const currentThread = activeLLMThreads.find((thread) => thread.id === activeLLMThreadId);
+  const nextTitle = window.prompt("输入新的话题标题", currentThread?.title || "新话题");
+  if (nextTitle == null) {
+    return;
+  }
+  const trimmed = nextTitle.trim();
+  if (!trimmed) {
+    chatSubtitle.textContent = "话题标题不能为空";
+    return;
+  }
+  const result = await updateLLMThread(activeThreadId, activeLLMThreadId, trimmed);
+  if (!result.response.ok) {
+    chatSubtitle.textContent = result.data.error || "重命名失败";
+    return;
+  }
+  activeLLMThreads = result.data.threads || activeLLMThreads;
+  renderLLMThreadBar();
+  chatSubtitle.textContent = result.data.message || "话题标题已更新";
+});
+
+chatModelSelect.addEventListener("change", () => {
+  const currentThread = activeLLMThreads.find((thread) => thread.id === activeLLMThreadId) || null;
+  chatSwitchModelBtn.disabled = !currentThread || (currentThread.llm_config_id != null && chatModelSelect.value === String(currentThread.llm_config_id));
+});
+
+chatSwitchModelBtn.addEventListener("click", async () => {
+  if (!activeThreadId || !activeLLMThreadId) {
+    return;
+  }
+  const llmConfigId = Number(chatModelSelect.value || 0);
+  if (llmConfigId <= 0) {
+    chatSubtitle.textContent = "请选择要切换的模型配置";
+    return;
+  }
+  const result = await switchLLMThreadConfig(activeThreadId, activeLLMThreadId, llmConfigId);
+  if (!result.response.ok) {
+    chatSubtitle.textContent = result.data.error || "切换模型失败";
+    return;
+  }
+  activeLLMThreads = result.data.threads || activeLLMThreads;
+  renderLLMThreadBar();
+  chatSubtitle.textContent = result.data.message || "当前话题模型已切换";
 });
 
 async function init(): Promise<void> {

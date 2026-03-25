@@ -169,9 +169,10 @@ func (s *Server) handleBotUserCreate(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	userIDStr, _ := userID.(string)
 	var req struct {
-		Name        string `json:"name" binding:"required"`
-		Description string `json:"description"`
-		LLMConfigID int64  `json:"llm_config_id" binding:"required"`
+		Name         string `json:"name" binding:"required"`
+		Description  string `json:"description"`
+		SystemPrompt string `json:"system_prompt"`
+		LLMConfigID  int64  `json:"llm_config_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
@@ -182,7 +183,7 @@ func (s *Server) handleBotUserCreate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Bot 名称和配置不能为空"})
 		return
 	}
-	item, err := s.createBotUser(userIDStr, name, strings.TrimSpace(req.Description), req.LLMConfigID, time.Now())
+	item, err := s.createBotUser(userIDStr, name, strings.TrimSpace(req.Description), strings.TrimSpace(req.SystemPrompt), req.LLMConfigID, time.Now())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
 		return
@@ -203,9 +204,10 @@ func (s *Server) handleBotUserUpdate(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name        string `json:"name" binding:"required"`
-		Description string `json:"description"`
-		LLMConfigID int64  `json:"llm_config_id" binding:"required"`
+		Name         string `json:"name" binding:"required"`
+		Description  string `json:"description"`
+		SystemPrompt string `json:"system_prompt"`
+		LLMConfigID  int64  `json:"llm_config_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
@@ -216,7 +218,7 @@ func (s *Server) handleBotUserUpdate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Bot 名称和配置不能为空"})
 		return
 	}
-	item, err := s.updateBotUser(userIDStr, id, name, strings.TrimSpace(req.Description), req.LLMConfigID, time.Now())
+	item, err := s.updateBotUser(userIDStr, id, name, strings.TrimSpace(req.Description), strings.TrimSpace(req.SystemPrompt), req.LLMConfigID, time.Now())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
 		return

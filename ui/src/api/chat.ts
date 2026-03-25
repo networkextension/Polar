@@ -5,6 +5,7 @@ import type {
   ChatMessagesResponse,
   StartChatResponse,
   LLMThreadListResponse,
+  ChatLLMConfigListResponse,
 } from "../types/chat.js";
 
 export async function fetchChats(limit = 50) {
@@ -42,6 +43,24 @@ export async function createLLMThread(threadId: string, title = "") {
   });
 }
 
+export async function updateLLMThread(threadId: string, llmThreadId: number, title: string) {
+  return requestJson<LLMThreadListResponse>(`/api/chats/${threadId}/llm-threads/${llmThreadId}`, {
+    method: "PUT",
+    body: { title },
+  });
+}
+
+export async function switchLLMThreadConfig(threadId: string, llmThreadId: number, llmConfigId: number) {
+  return requestJson<LLMThreadListResponse>(`/api/chats/${threadId}/llm-threads/${llmThreadId}/config`, {
+    method: "PUT",
+    body: { llm_config_id: llmConfigId },
+  });
+}
+
+export async function fetchChatLLMConfigs() {
+  return requestJson<ChatLLMConfigListResponse>("/api/llm-configs");
+}
+
 export async function fetchSharedMarkdown(threadId: string, messageId: string) {
   return requestJson<SharedMarkdownResponse>(`/api/chats/${threadId}/messages/${messageId}/markdown`);
 }
@@ -49,6 +68,12 @@ export async function fetchSharedMarkdown(threadId: string, messageId: string) {
 export async function revokeMessage(threadId: string, messageId: string) {
   return request(`/api/chats/${threadId}/messages/${messageId}`, {
     method: "DELETE",
+  });
+}
+
+export async function retryMessage(threadId: string, messageId: string) {
+  return requestJson<{ message?: string; content?: string; error?: string }>(`/api/chats/${threadId}/messages/${messageId}/retry`, {
+    method: "POST",
   });
 }
 

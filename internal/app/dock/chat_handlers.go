@@ -302,6 +302,134 @@ func (s *Server) handleChatLLMThreadCreate(c *gin.Context) {
 	})
 }
 
+func (s *Server) handleChatLLMThreadUpdate(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	threadID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || threadID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的会话"})
+		return
+	}
+	participant, err := s.isChatParticipant(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if !participant {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该会话"})
+		return
+	}
+
+	llmThreadID, err := strconv.ParseInt(c.Param("threadId"), 10, 64)
+	if err != nil || llmThreadID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的话题"})
+		return
+	}
+
+	var req struct {
+		Title string `json:"title" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
+		return
+	}
+
+	item, err := s.updateLLMThreadTitle(threadID, userIDStr, llmThreadID, req.Title, time.Now())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
+		return
+	}
+	if item == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "话题不存在"})
+		return
+	}
+
+	items, err := s.listLLMThreads(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"thread":  item,
+		"threads": items,
+		"message": "话题标题已更新",
+	})
+}
+
+func (s *Server) handleChatLLMThreadConfigUpdate(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	threadID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || threadID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的会话"})
+		return
+	}
+	participant, err := s.isChatParticipant(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if !participant {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该会话"})
+		return
+	}
+
+	llmThreadID, err := strconv.ParseInt(c.Param("threadId"), 10, 64)
+	if err != nil || llmThreadID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的话题"})
+		return
+	}
+
+	botUserID, err := s.getAIResponderForChat(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if botUserID == "" || !strings.HasPrefix(botUserID, "bot_") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前话题不支持切换模型"})
+		return
+	}
+
+	var req struct {
+		LLMConfigID int64 `json:"llm_config_id" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.LLMConfigID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
+		return
+	}
+
+	item, err := s.updateLLMThreadConfig(threadID, userIDStr, llmThreadID, req.LLMConfigID, time.Now())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
+		return
+	}
+	if item == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "话题或模型配置不存在"})
+		return
+	}
+
+	items, err := s.listLLMThreads(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"thread":  item,
+		"threads": items,
+		"message": "当前话题模型已切换，后续回复将使用新配置",
+	})
+}
+
 func (s *Server) handleChatSend(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	userIDStr, ok := userID.(string)
@@ -397,6 +525,112 @@ func (s *Server) handleChatSend(c *gin.Context) {
 	})
 }
 
+func (s *Server) handleChatRetry(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	threadID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || threadID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的会话"})
+		return
+	}
+	participant, err := s.isChatParticipant(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if !participant {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该会话"})
+		return
+	}
+
+	messageID, err := strconv.ParseInt(c.Param("messageId"), 10, 64)
+	if err != nil || messageID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效消息"})
+		return
+	}
+
+	if s.aiAgent == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "AI Agent 未就绪"})
+		return
+	}
+
+	task, sourceContent, err := s.buildRetryTask(threadID, messageID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	s.aiAgent.enqueue(task)
+	if deleted, deleteErr := s.markChatMessageFailedResolved(threadID, messageID, time.Now()); deleteErr != nil {
+		log.Printf("mark failed retry message resolved failed: %v", deleteErr)
+	} else if deleted {
+		if userLow, userHigh, participantsErr := s.getChatParticipants(threadID); participantsErr == nil {
+			deletedAt := time.Now()
+			s.broadcastChatEvent([]string{userLow, userHigh}, chatEvent{
+				Type:      "revoke",
+				ChatID:    threadID,
+				MessageID: messageID,
+				DeletedAt: &deletedAt,
+				UserID:    "retry",
+			})
+		}
+	}
+	c.JSON(http.StatusAccepted, gin.H{
+		"message": "已重新提交上一条用户消息",
+		"content": sourceContent,
+	})
+}
+
+func (s *Server) buildRetryTask(threadID, messageID int64, requesterID string) (aiAgentTask, string, error) {
+	targetMessage, err := s.getChatMessageByID(messageID)
+	if err != nil {
+		return aiAgentTask{}, "", err
+	}
+	if targetMessage == nil || targetMessage.ThreadID != threadID {
+		return aiAgentTask{}, "", errors.New("消息不存在")
+	}
+
+	responderUserID, err := s.getAIResponderForChat(threadID, requesterID)
+	if err != nil {
+		return aiAgentTask{}, "", err
+	}
+	if responderUserID == "" {
+		return aiAgentTask{}, "", errors.New("当前会话不是 AI Bot 会话")
+	}
+	if targetMessage.SenderID != responderUserID {
+		return aiAgentTask{}, "", errors.New("只能重试 AI 返回的消息")
+	}
+	if !targetMessage.Failed {
+		return aiAgentTask{}, "", errors.New("当前消息不是失败消息")
+	}
+
+	sourceMessage, err := s.findRetrySourceMessage(threadID, targetMessage)
+	if err != nil {
+		return aiAgentTask{}, "", err
+	}
+	if sourceMessage == nil || strings.TrimSpace(sourceMessage.Content) == "" {
+		return aiAgentTask{}, "", errors.New("未找到可重试的上一条用户消息")
+	}
+
+	responderName := targetMessage.SenderUsername
+	if strings.TrimSpace(responderName) == "" {
+		responderName = responderUserID
+	}
+
+	return aiAgentTask{
+		ThreadID:        threadID,
+		LLMThreadID:     targetMessage.LLMThreadID,
+		UserID:          requesterID,
+		ResponderUserID: responderUserID,
+		ResponderName:   responderName,
+		Content:         strings.TrimSpace(sourceMessage.Content),
+	}, strings.TrimSpace(sourceMessage.Content), nil
+}
+
 func (s *Server) getAIResponderForChat(threadID int64, userID string) (string, error) {
 	otherUserID, err := s.getChatCounterparty(threadID, userID)
 	if err != nil {
@@ -451,6 +685,14 @@ func (s *Server) resolveChatLLMThread(threadID int64, userID, requestedThreadID 
 
 func (s *Server) sendChatMessage(threadID int64, llmThreadID *int64, senderID, senderName, content string, now time.Time) (int64, error) {
 	msgID, err := s.createChatMessage(threadID, llmThreadID, senderID, content, now)
+	if err != nil {
+		return 0, err
+	}
+	return s.broadcastChatMessageByID(threadID, msgID, senderID, senderName)
+}
+
+func (s *Server) sendFailedBotMessage(threadID int64, llmThreadID *int64, senderID, senderName, content string, now time.Time) (int64, error) {
+	msgID, err := s.createChatMessageWithOptions(threadID, llmThreadID, senderID, "text", true, content, nil, "", now)
 	if err != nil {
 		return 0, err
 	}

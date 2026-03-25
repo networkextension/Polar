@@ -70,8 +70,6 @@ const iconZoom = byId<HTMLInputElement>("iconZoom");
 const saveIconBtn = byId<HTMLButtonElement>("saveIconBtn");
 const cancelIconBtn = byId<HTMLButtonElement>("cancelIconBtn");
 const iconStatus = byId<HTMLElement>("iconStatus");
-const groupName = byId<HTMLElement>("groupName");
-const groupMeta = byId<HTMLElement>("groupMeta");
 const settingsCardAvatar = byId<HTMLImageElement>("settingsCardAvatar");
 const settingsCardName = byId<HTMLElement>("settingsCardName");
 const settingsCardMeta = byId<HTMLElement>("settingsCardMeta");
@@ -110,6 +108,7 @@ const botUserForm = byId<HTMLFormElement>("botUserForm");
 const botUserNameInput = byId<HTMLInputElement>("botUserNameInput");
 const botUserConfigSelect = byId<HTMLSelectElement>("botUserConfigSelect");
 const botUserDescriptionInput = byId<HTMLTextAreaElement>("botUserDescriptionInput");
+const botUserSystemPromptInput = byId<HTMLTextAreaElement>("botUserSystemPromptInput");
 const botUserResetBtn = byId<HTMLButtonElement>("botUserResetBtn");
 const botUserSubmitBtn = byId<HTMLButtonElement>("botUserSubmitBtn");
 const botUserStatus = byId<HTMLElement>("botUserStatus");
@@ -152,7 +151,7 @@ let editingLLMConfigId: number | null = null;
 let editingBotUserId: number | null = null;
 let currentLLMConfigs: LLMConfig[] = [];
 let currentBotUsers: BotUser[] = [];
-let activeSettingsSection: "profile" | "personalization" | "settings" = "personalization";
+let activeSettingsSection: "profile" | "personalization" | "settings" | "bots" = "personalization";
 
 function setModalOpen(modal: HTMLElement, open: boolean): void {
   modal.classList.toggle("open", open);
@@ -184,7 +183,7 @@ function syncThemeButton(theme: ThemeName): void {
   themeCurrentValue.textContent = theme === "mono" ? "黑白" : "默认";
 }
 
-function switchSettingsSection(section: "profile" | "personalization" | "settings"): void {
+function switchSettingsSection(section: "profile" | "personalization" | "settings" | "bots"): void {
   activeSettingsSection = section;
   const titles: Record<typeof activeSettingsSection, { title: string; lead: string }> = {
     profile: {
@@ -196,17 +195,21 @@ function switchSettingsSection(section: "profile" | "personalization" | "setting
       lead: "管理界面风格和个人偏好，让工作台更贴近你的使用习惯。",
     },
     settings: {
-      title: "设置",
-      lead: "管理站点配置、LLM Config、Bot User 以及管理员可见的站点维护项。",
+      title: "LLM Config",
+      lead: "管理模型地址、API Key、Model 和配置连通性测试。",
+    },
+    bots: {
+      title: "Bot 管理",
+      lead: "在这里维护 Bot 的默认模型配置、简介和专属 Prompt。",
     },
   };
-  settingsNavButtons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.settingsNav === section);
-  });
   settingsPanels.forEach((panel) => {
     const matched = panel.dataset.settingsPanel === section;
     panel.hidden = !matched;
     panel.classList.toggle("active", matched);
+  });
+  settingsNavButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.settingsNav === section);
   });
   siteAdminModalTitle.textContent = titles[section].title;
   settingsSectionLead.textContent = titles[section].lead;
@@ -359,6 +362,7 @@ function renderBotUserList(bots: BotUser[]): void {
             </div>
             <div class="tag-item-meta">用户 ID：${bot.bot_user_id}</div>
             <div class="tag-item-desc">${bot.description || "暂无简介"}</div>
+            <div class="tag-item-meta">${bot.system_prompt ? `Bot Prompt：${bot.system_prompt.slice(0, 36)}${bot.system_prompt.length > 36 ? "..." : ""}` : "未配置 Bot Prompt"}</div>
           </div>
           <div class="tag-item-actions">
             <button class="btn-inline btn-secondary" type="button" data-action="chat">对话</button>
@@ -407,12 +411,10 @@ async function loadProfile(): Promise<void> {
 
   isAdmin = data.role === "admin";
   welcomeText.textContent = `你好，${data.username}`;
-  groupName.textContent = isAdmin ? "管理用户组" : "普通用户组";
-  groupMeta.textContent = isAdmin ? "可管理站点信息、Tag 与内容" : "基础浏览与发帖";
   settingsCardName.textContent = data.username || "当前用户";
-  settingsCardMeta.textContent = isAdmin ? "管理员 · 配置与站点管理" : "普通用户 · Profile 与个性化";
+  settingsCardMeta.textContent = isAdmin ? "Profile、个性化与站点管理" : "Profile 与个性化";
   settingsProfileName.textContent = data.username || "当前用户";
-  settingsProfileMeta.textContent = isAdmin ? "管理员账号，可维护站点与 AI 配置" : "维护你的个人资料、设备与偏好";
+  settingsProfileMeta.textContent = isAdmin ? "维护你的个人资料、设备偏好与站点配置" : "维护你的个人资料、设备与偏好";
   addTagBtn.disabled = !isAdmin;
   addTagBtn.textContent = isAdmin ? "新建 Tag" : "仅管理员可新建 Tag";
   addTagBtn.hidden = !isAdmin;
@@ -835,6 +837,7 @@ botUserForm.addEventListener("submit", async (event) => {
   const payload: BotPayload = {
     name: botUserNameInput.value.trim(),
     description: botUserDescriptionInput.value.trim(),
+    system_prompt: botUserSystemPromptInput.value.trim(),
     llm_config_id: Number(botUserConfigSelect.value || 0),
   };
   if (!payload.name || payload.llm_config_id <= 0) {
@@ -884,6 +887,7 @@ botUserList.addEventListener("click", async (event) => {
     editingBotUserId = bot.id;
     botUserNameInput.value = bot.name;
     botUserDescriptionInput.value = bot.description || "";
+    botUserSystemPromptInput.value = bot.system_prompt || "";
     botUserConfigSelect.value = String(bot.llm_config_id);
     botUserSubmitBtn.textContent = "更新 Bot";
     botUserStatus.textContent = "";

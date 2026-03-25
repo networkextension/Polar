@@ -27,6 +27,7 @@ export type ChatMessage = {
   sender_username: string;
   sender_icon?: string;
   message_type?: string;
+  failed?: boolean;
   content: string;
   markdown_entry_id?: number;
   markdown_title?: string;
@@ -45,10 +46,19 @@ export type LLMThread = {
   chat_thread_id: number;
   owner_user_id: string;
   bot_user_id: string;
+  llm_config_id?: number;
+  config_name?: string;
+  config_model?: string;
   title: string;
   created_at: string;
   updated_at: string;
   last_message_at?: string;
+};
+
+export type ChatLLMConfig = {
+  id: number;
+  name: string;
+  model: string;
 };
 
 export type LLMThreadListResponse = {
@@ -56,6 +66,11 @@ export type LLMThreadListResponse = {
   thread?: LLMThread;
   active_thread?: LLMThread;
   message?: string;
+  error?: string;
+};
+
+export type ChatLLMConfigListResponse = {
+  configs?: ChatLLMConfig[];
   error?: string;
 };
 

@@ -29,12 +29,32 @@ export async function createLLMThread(threadId, title = "") {
         body: { title },
     });
 }
+export async function updateLLMThread(threadId, llmThreadId, title) {
+    return requestJson(`/api/chats/${threadId}/llm-threads/${llmThreadId}`, {
+        method: "PUT",
+        body: { title },
+    });
+}
+export async function switchLLMThreadConfig(threadId, llmThreadId, llmConfigId) {
+    return requestJson(`/api/chats/${threadId}/llm-threads/${llmThreadId}/config`, {
+        method: "PUT",
+        body: { llm_config_id: llmConfigId },
+    });
+}
+export async function fetchChatLLMConfigs() {
+    return requestJson("/api/llm-configs");
+}
 export async function fetchSharedMarkdown(threadId, messageId) {
     return requestJson(`/api/chats/${threadId}/messages/${messageId}/markdown`);
 }
 export async function revokeMessage(threadId, messageId) {
     return request(`/api/chats/${threadId}/messages/${messageId}`, {
         method: "DELETE",
+    });
+}
+export async function retryMessage(threadId, messageId) {
+    return requestJson(`/api/chats/${threadId}/messages/${messageId}/retry`, {
+        method: "POST",
     });
 }
 export async function sendMessage(threadId, content, llmThreadId) {

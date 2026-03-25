@@ -41,6 +41,19 @@
               <button id="drawerCloseBtn" class="btn-inline btn-secondary drawer-close" type="button">收起</button>
             </div>
             <div class="drawer-body">
+              <div class="drawer-section">
+                <div class="badge">快捷入口</div>
+                <p class="drawer-help">快速进入私聊会话列表或联系 AI 助理。</p>
+                <a class="btn-secondary drawer-action-btn" href="/chat.html">私聊</a>
+                <a class="btn-secondary drawer-action-btn" href="/chat.html?user_id=system&username=system">AI 助理</a>
+              </div>
+
+              <button id="addTagBtn" class="btn-secondary group-action-btn" type="button" hidden>新建 Tag</button>
+
+              <ul id="entryList" class="list"></ul>
+              <button id="loadMoreBtn" class="btn-inline btn-secondary" type="button">加载更多</button>
+            </div>
+            <div class="drawer-footer">
               <div class="group-card settings-entry-card">
                 <div class="settings-entry-head">
                   <img id="settingsCardAvatar" class="avatar avatar-sm" alt="用户头像" />
@@ -53,26 +66,8 @@
                   <button class="btn-secondary group-action-btn" type="button" data-open-settings-center data-settings-target="profile">Profile</button>
                   <button id="openSiteAdminBtn" class="btn-secondary group-action-btn" type="button" data-settings-target="personalization">设置中心</button>
                 </div>
+                <button id="logoutBtn" class="btn-secondary group-action-btn" type="button">退出登录</button>
               </div>
-
-              <div class="group-card">
-                <div class="badge">用户组</div>
-                <div id="groupName" class="group-name">加载中...</div>
-                <div id="groupMeta" class="group-meta"></div>
-                <button id="addTagBtn" class="btn-secondary group-action-btn" type="button" hidden>新建 Tag</button>
-              </div>
-
-              <ul id="entryList" class="list"></ul>
-              <button id="loadMoreBtn" class="btn-inline btn-secondary" type="button">加载更多</button>
-            </div>
-            <div class="drawer-footer">
-              <div class="drawer-section">
-                <div class="badge">快捷入口</div>
-                <p class="drawer-help">快速进入私聊会话列表或联系 AI 助理。</p>
-                <a class="btn-secondary drawer-action-btn" href="/chat.html">私聊</a>
-                <a class="btn-secondary drawer-action-btn" href="/chat.html?user_id=system&username=system">AI 助理</a>
-              </div>
-              <button id="logoutBtn" class="drawer-action-btn" type="button">退出登录</button>
             </div>
           </aside>
 
@@ -135,6 +130,10 @@
               <button class="settings-center-nav-btn" type="button" data-settings-nav="settings">
                 <span class="settings-center-nav-icon">⚙</span>
                 <span>设置</span>
+              </button>
+              <button class="settings-center-nav-btn" type="button" data-settings-nav="bots">
+                <span class="settings-center-nav-icon">◉</span>
+                <span>Bot 管理</span>
               </button>
             </div>
           </aside>
@@ -231,7 +230,7 @@
                   <div class="site-tags-header">
                     <div>
                       <div class="badge">LLM Config</div>
-                      <p class="drawer-help">配置你自己的模型地址、API Key、Model 和系统提示词。</p>
+                      <p class="drawer-help">配置你自己的模型地址、API Key 和 Model。Bot 的运行时 Prompt 现在单独维护在 Bot User 上。</p>
                     </div>
                   </div>
                   <div class="site-admin-grid site-admin-grid-wide">
@@ -248,8 +247,8 @@
                       <label class="form-label" for="llmConfigApiKeyInput">API Key</label>
                       <input id="llmConfigApiKeyInput" class="input" type="password" maxlength="300" placeholder="新增时建议填写，编辑时留空表示保持原值" />
 
-                      <label class="form-label" for="llmConfigSystemPromptInput">System Prompt</label>
-                      <textarea id="llmConfigSystemPromptInput" class="input textarea" rows="5" maxlength="5000" placeholder="告诉这个 Bot 应该如何回答"></textarea>
+                      <label class="form-label" for="llmConfigSystemPromptInput">测试 Prompt（可选）</label>
+                      <textarea id="llmConfigSystemPromptInput" class="input textarea" rows="5" maxlength="5000" placeholder="仅用于测试配置连通性，不作为 Bot 运行时 Prompt"></textarea>
 
                       <div class="site-settings-actions site-settings-actions-split">
                         <button id="llmConfigResetBtn" class="btn-inline btn-secondary" type="button">清空</button>
@@ -261,34 +260,6 @@
                       <div id="llmConfigStatus" class="status-text"></div>
                     </form>
                     <ul id="llmConfigList" class="tag-list"></ul>
-                  </div>
-                </div>
-
-                <div class="site-tags-section">
-                  <div class="site-tags-header">
-                    <div>
-                      <div class="badge">Bot User</div>
-                      <p class="drawer-help">每个 Bot 都是一个可私聊的用户，绑定配置后就能直接在消息里使用。</p>
-                    </div>
-                  </div>
-                  <div class="site-admin-grid site-admin-grid-wide">
-                    <form id="botUserForm" class="site-settings-form">
-                      <label class="form-label" for="botUserNameInput">Bot 名称</label>
-                      <input id="botUserNameInput" class="input" type="text" maxlength="60" placeholder="例如：翻译助手" />
-
-                      <label class="form-label" for="botUserConfigSelect">绑定配置</label>
-                      <select id="botUserConfigSelect" class="input"></select>
-
-                      <label class="form-label" for="botUserDescriptionInput">Bot 简介</label>
-                      <textarea id="botUserDescriptionInput" class="input textarea" rows="4" maxlength="500" placeholder="告诉用户这个 Bot 擅长做什么"></textarea>
-
-                      <div class="site-settings-actions site-settings-actions-split">
-                        <button id="botUserResetBtn" class="btn-inline btn-secondary" type="button">清空</button>
-                        <button id="botUserSubmitBtn" class="btn-secondary" type="submit">保存 Bot</button>
-                      </div>
-                      <div id="botUserStatus" class="status-text"></div>
-                    </form>
-                    <ul id="botUserList" class="tag-list"></ul>
                   </div>
                 </div>
 
@@ -356,6 +327,42 @@
                 </div>
               </div>
             </section>
+
+            <section class="settings-panel" data-settings-panel="bots" hidden>
+              <div class="site-admin-panel">
+                <div class="site-tags-section">
+                  <div class="site-tags-header">
+                    <div>
+                      <div class="badge">Bot User</div>
+                      <p class="drawer-help">每个 Bot 都是一个可私聊的用户。这里维护 Bot 默认模型配置和 Bot Prompt。</p>
+                    </div>
+                  </div>
+                  <div class="site-admin-grid site-admin-grid-wide">
+                    <form id="botUserForm" class="site-settings-form">
+                      <label class="form-label" for="botUserNameInput">Bot 名称</label>
+                      <input id="botUserNameInput" class="input" type="text" maxlength="60" placeholder="例如：翻译助手" />
+
+                      <label class="form-label" for="botUserConfigSelect">绑定配置</label>
+                      <select id="botUserConfigSelect" class="input"></select>
+
+                      <label class="form-label" for="botUserDescriptionInput">Bot 简介</label>
+                      <textarea id="botUserDescriptionInput" class="input textarea" rows="4" maxlength="500" placeholder="告诉用户这个 Bot 擅长做什么"></textarea>
+
+                      <label class="form-label" for="botUserSystemPromptInput">Bot 配置 Prompt</label>
+                      <textarea id="botUserSystemPromptInput" class="input textarea" rows="6" maxlength="5000" placeholder="定义这个 Bot 的人设、回答风格、边界和行为规则"></textarea>
+
+                      <div class="site-settings-actions site-settings-actions-split">
+                        <button id="botUserResetBtn" class="btn-inline btn-secondary" type="button">清空</button>
+                        <button id="botUserSubmitBtn" class="btn-secondary" type="submit">保存 Bot</button>
+                      </div>
+                      <div id="botUserStatus" class="status-text"></div>
+                    </form>
+                    <ul id="botUserList" class="tag-list"></ul>
+                  </div>
+                </div>
+              </div>
+            </section>
+
           </div>
         </div>
       </div>
