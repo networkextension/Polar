@@ -36,6 +36,7 @@ type aiAgent struct {
 
 type aiAgentTask struct {
 	ThreadID        int64
+	LLMThreadID     *int64
 	UserID          string
 	ResponderUserID string
 	ResponderName   string
@@ -133,12 +134,12 @@ func (a *aiAgent) handleTask(task aiAgentTask) {
 	entry, _, err := a.server.saveMarkdownDocument(task.ResponderUserID, title, reply, false, now)
 	if err != nil {
 		log.Printf("save ai markdown failed: %v", err)
-		if _, sendErr := a.server.sendChatMessage(task.ThreadID, task.ResponderUserID, task.ResponderName, reply, now); sendErr != nil {
+		if _, sendErr := a.server.sendChatMessage(task.ThreadID, task.LLMThreadID, task.ResponderUserID, task.ResponderName, reply, now); sendErr != nil {
 			log.Printf("send fallback ai agent chat message failed: %v", sendErr)
 		}
 		return
 	}
-	if _, err := a.server.sendSharedMarkdownMessage(task.ThreadID, task.ResponderUserID, task.ResponderName, entry.ID, entry.Title, buildMarkdownPreview(reply, 120), now); err != nil {
+	if _, err := a.server.sendSharedMarkdownMessage(task.ThreadID, task.LLMThreadID, task.ResponderUserID, task.ResponderName, entry.ID, entry.Title, buildMarkdownPreview(reply, 120), now); err != nil {
 		log.Printf("send ai shared markdown message failed: %v", err)
 	}
 }
@@ -155,7 +156,7 @@ func (a *aiAgent) generateReply(task aiAgentTask) (string, error) {
 		return "这个 Bot 的模型配置还没准备好，请先补全 API Key、Base URL 和 Model。", nil
 	}
 
-	contextText, err := a.buildContext(task.ThreadID)
+	contextText, err := a.buildContext(task.ThreadID, task.LLMThreadID)
 	if err != nil {
 		log.Printf("build ai context failed: %v", err)
 	}
@@ -327,7 +328,7 @@ func parseAIErrorMessage(raw json.RawMessage) string {
 	return strings.TrimSpace(string(raw))
 }
 
-func (a *aiAgent) buildContext(threadID int64) (string, error) {
+func (a *aiAgent) buildContext(threadID int64, llmThreadID *int64) (string, error) {
 	var parts []string
 	parts = append(parts, "以下是程序运行目录中的文档摘要和当前私聊上下文。")
 
@@ -338,7 +339,7 @@ func (a *aiAgent) buildContext(threadID int64) (string, error) {
 		parts = append(parts, docText)
 	}
 
-	messages, err := a.server.listRecentChatMessages(threadID, 12)
+	messages, err := a.server.listRecentChatMessages(threadID, llmThreadID, 12)
 	if err != nil {
 		return strings.Join(parts, "\n\n"), err
 	}

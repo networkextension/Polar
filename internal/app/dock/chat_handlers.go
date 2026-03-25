@@ -3,6 +3,7 @@ package dock
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -135,6 +136,12 @@ func (s *Server) handleChatMessages(c *gin.Context) {
 		return
 	}
 
+	llmThreadID, activeLLMThread, err := s.resolveChatLLMThread(threadID, userIDStr, c.Query("llm_thread_id"), false, time.Now())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
 	limit := 0
 	if limitStr := c.Query("limit"); limitStr != "" {
 		parsed, err := strconv.Atoi(limitStr)
@@ -155,7 +162,7 @@ func (s *Server) handleChatMessages(c *gin.Context) {
 		offset = parsed
 	}
 
-	messages, hasMore, err := s.listChatMessages(threadID, limit, offset)
+	messages, hasMore, err := s.listChatMessages(threadID, llmThreadID, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
@@ -179,9 +186,119 @@ func (s *Server) handleChatMessages(c *gin.Context) {
 
 	nextOffset := offset + len(messages)
 	c.JSON(http.StatusOK, gin.H{
-		"messages":    messages,
-		"has_more":    hasMore,
-		"next_offset": nextOffset,
+		"messages":      messages,
+		"has_more":      hasMore,
+		"next_offset":   nextOffset,
+		"active_thread": activeLLMThread,
+		"active_thread_id": func() any {
+			if llmThreadID == nil {
+				return nil
+			}
+			return *llmThreadID
+		}(),
+	})
+}
+
+func (s *Server) handleChatLLMThreads(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	threadID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || threadID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的会话"})
+		return
+	}
+	participant, err := s.isChatParticipant(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if !participant {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该会话"})
+		return
+	}
+
+	_, activeThread, err := s.resolveChatLLMThread(threadID, userIDStr, c.Query("active_thread_id"), true, time.Now())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	if activeThread == nil {
+		c.JSON(http.StatusOK, gin.H{"threads": []LLMThread{}})
+		return
+	}
+
+	items, err := s.listLLMThreads(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"threads":       items,
+		"active_thread": activeThread,
+	})
+}
+
+func (s *Server) handleChatLLMThreadCreate(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	threadID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || threadID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的会话"})
+		return
+	}
+	participant, err := s.isChatParticipant(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if !participant {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该会话"})
+		return
+	}
+
+	var req struct {
+		Title string `json:"title"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
+		return
+	}
+
+	botUserID, err := s.getAIResponderForChat(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if botUserID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前会话不是 AI Bot 会话"})
+		return
+	}
+
+	item, err := s.createLLMThread(threadID, userIDStr, botUserID, strings.TrimSpace(req.Title), time.Now())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
+		return
+	}
+	items, err := s.listLLMThreads(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"thread":  item,
+		"threads": items,
+		"message": "新话题已创建",
 	})
 }
 
@@ -210,7 +327,8 @@ func (s *Server) handleChatSend(c *gin.Context) {
 	}
 
 	var req struct {
-		Content string `json:"content" binding:"required"`
+		Content     string `json:"content" binding:"required"`
+		LLMThreadID *int64 `json:"llm_thread_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
@@ -223,9 +341,20 @@ func (s *Server) handleChatSend(c *gin.Context) {
 		return
 	}
 
+	llmThreadID, activeLLMThread, err := s.resolveChatLLMThread(threadID, userIDStr, func() string {
+		if req.LLMThreadID == nil {
+			return ""
+		}
+		return strconv.FormatInt(*req.LLMThreadID, 10)
+	}(), true, time.Now())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
 	username, _ := c.Get("username")
 	senderName, _ := username.(string)
-	msgID, err := s.sendChatMessage(threadID, userIDStr, senderName, content, time.Now())
+	msgID, err := s.sendChatMessage(threadID, llmThreadID, userIDStr, senderName, content, time.Now())
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
@@ -252,6 +381,7 @@ func (s *Server) handleChatSend(c *gin.Context) {
 		if responderName != "" {
 			s.aiAgent.enqueue(aiAgentTask{
 				ThreadID:        threadID,
+				LLMThreadID:     llmThreadID,
 				UserID:          userIDStr,
 				ResponderUserID: otherUserID,
 				ResponderName:   responderName,
@@ -261,21 +391,74 @@ func (s *Server) handleChatSend(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message": "发送成功",
-		"id":      msgID,
+		"message":       "发送成功",
+		"id":            msgID,
+		"active_thread": activeLLMThread,
 	})
 }
 
-func (s *Server) sendChatMessage(threadID int64, senderID, senderName, content string, now time.Time) (int64, error) {
-	msgID, err := s.createChatMessage(threadID, senderID, content, now)
+func (s *Server) getAIResponderForChat(threadID int64, userID string) (string, error) {
+	otherUserID, err := s.getChatCounterparty(threadID, userID)
+	if err != nil {
+		return "", err
+	}
+	if otherUserID == systemUserID {
+		return otherUserID, nil
+	}
+	botUser, err := s.getBotUserByUserID(otherUserID)
+	if err != nil {
+		return "", err
+	}
+	if botUser != nil {
+		return otherUserID, nil
+	}
+	return "", nil
+}
+
+func (s *Server) resolveChatLLMThread(threadID int64, userID, requestedThreadID string, autoCreate bool, now time.Time) (*int64, *LLMThread, error) {
+	botUserID, err := s.getAIResponderForChat(threadID, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if botUserID == "" {
+		return nil, nil, nil
+	}
+	if strings.TrimSpace(requestedThreadID) != "" {
+		id, parseErr := strconv.ParseInt(strings.TrimSpace(requestedThreadID), 10, 64)
+		if parseErr != nil || id <= 0 {
+			return nil, nil, nil
+		}
+		thread, getErr := s.getLLMThread(threadID, userID, id)
+		if getErr != nil {
+			return nil, nil, getErr
+		}
+		if thread != nil {
+			return &thread.ID, thread, nil
+		}
+	}
+	if !autoCreate {
+		return nil, nil, nil
+	}
+	thread, err := s.ensureDefaultLLMThread(threadID, userID, botUserID, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if thread == nil {
+		return nil, nil, nil
+	}
+	return &thread.ID, thread, nil
+}
+
+func (s *Server) sendChatMessage(threadID int64, llmThreadID *int64, senderID, senderName, content string, now time.Time) (int64, error) {
+	msgID, err := s.createChatMessage(threadID, llmThreadID, senderID, content, now)
 	if err != nil {
 		return 0, err
 	}
 	return s.broadcastChatMessageByID(threadID, msgID, senderID, senderName)
 }
 
-func (s *Server) sendSharedMarkdownMessage(threadID int64, senderID, senderName string, markdownEntryID int64, markdownTitle, preview string, now time.Time) (int64, error) {
-	msgID, err := s.createChatMessageWithMetadata(threadID, senderID, "shared_markdown", preview, &markdownEntryID, markdownTitle, now)
+func (s *Server) sendSharedMarkdownMessage(threadID int64, llmThreadID *int64, senderID, senderName string, markdownEntryID int64, markdownTitle, preview string, now time.Time) (int64, error) {
+	msgID, err := s.createChatMessageWithMetadata(threadID, llmThreadID, senderID, "shared_markdown", preview, &markdownEntryID, markdownTitle, now)
 	if err != nil {
 		return 0, err
 	}

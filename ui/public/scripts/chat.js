@@ -1,4 +1,4 @@
-import { fetchChats, fetchMessages, fetchSharedMarkdown, revokeMessage as revokeChatMessage, sendMessage, startChat } from "./api/chat.js";
+import { createLLMThread, fetchChats, fetchLLMThreads, fetchMessages, fetchSharedMarkdown, revokeMessage as revokeChatMessage, sendMessage, startChat } from "./api/chat.js";
 import { requestJson } from "./api/http.js";
 import { fetchCurrentUser } from "./api/session.js";
 import { resolveAvatar } from "./lib/avatar.js";
@@ -15,6 +15,9 @@ const messageList = byId("messageList");
 const messageForm = byId("messageForm");
 const messageInput = byId("messageInput");
 const chatRefreshBtn = byId("chatRefreshBtn");
+const chatNewTopicBtn = byId("chatNewTopicBtn");
+const chatThreadBar = byId("chatThreadBar");
+const chatThreadSelect = byId("chatThreadSelect");
 let currentUserId = "";
 let activeThreadId = null;
 let chatCache = [];
@@ -23,6 +26,9 @@ let ws = null;
 let wsConnected = false;
 let activeMessages = [];
 let activeMessageLoadedAt = "";
+let activeLLMThreadId = null;
+let activeLLMThreads = [];
+let activeIsAIChat = false;
 const expandedMarkdownMessages = new Set();
 const sharedMarkdownContentCache = new Map();
 const sharedMarkdownLoading = new Set();
@@ -102,6 +108,32 @@ function updateActiveChatHeader() {
     }
     chatTitle.textContent = chat.other_username;
     chatSubtitle.textContent = formatPresence(chat);
+}
+function isAIChat(chat) {
+    if (!chat) {
+        return false;
+    }
+    return chat.other_user_id === "system" || chat.other_user_id.startsWith("bot_");
+}
+function renderLLMThreadBar() {
+    chatThreadBar.hidden = !activeIsAIChat;
+    chatNewTopicBtn.hidden = !activeIsAIChat;
+    if (!activeIsAIChat) {
+        chatThreadSelect.innerHTML = "";
+        return;
+    }
+    if (!activeLLMThreads.length) {
+        chatThreadSelect.innerHTML = `<option value="">默认话题</option>`;
+        chatThreadSelect.disabled = true;
+        return;
+    }
+    chatThreadSelect.disabled = false;
+    chatThreadSelect.innerHTML = activeLLMThreads
+        .map((thread) => `<option value="${thread.id}">${escapeHtml(thread.title || "新话题")}</option>`)
+        .join("");
+    if (activeLLMThreadId) {
+        chatThreadSelect.value = String(activeLLMThreadId);
+    }
 }
 function getMessageMarker(message) {
     if (!message) {
@@ -244,6 +276,27 @@ async function startChatWithUser(userId) {
         return null;
     }
     return data.chat || null;
+}
+async function loadLLMThreads(threadId, preferredThreadId) {
+    const chat = chatCache.find((item) => item.id === threadId);
+    activeIsAIChat = isAIChat(chat);
+    if (!activeIsAIChat) {
+        activeLLMThreadId = null;
+        activeLLMThreads = [];
+        renderLLMThreadBar();
+        return;
+    }
+    const { response, data } = await fetchLLMThreads(threadId, preferredThreadId || activeLLMThreadId);
+    if (!response.ok) {
+        activeLLMThreads = [];
+        activeLLMThreadId = null;
+        chatSubtitle.textContent = data.error || "无法加载话题";
+        renderLLMThreadBar();
+        return;
+    }
+    activeLLMThreads = data.threads || [];
+    activeLLMThreadId = data.active_thread?.id || preferredThreadId || activeLLMThreads[0]?.id || null;
+    renderLLMThreadBar();
 }
 function renderMessages(messages) {
     activeMessages = messages;
@@ -438,10 +491,17 @@ function renderMessages(messages) {
 }
 async function loadMessages(threadId) {
     messageList.innerHTML = "<div class='chat-empty'>加载中...</div>";
-    const { response, data } = await fetchMessages(threadId);
+    const { response, data } = await fetchMessages(threadId, 200, activeLLMThreadId);
     if (!response.ok) {
         messageList.innerHTML = "<div class='chat-empty'>无法加载消息</div>";
         return;
+    }
+    if (data.active_thread?.id) {
+        activeLLMThreadId = data.active_thread.id;
+        if (!activeLLMThreads.some((thread) => thread.id === data.active_thread?.id) && data.active_thread) {
+            activeLLMThreads = [data.active_thread, ...activeLLMThreads];
+        }
+        renderLLMThreadBar();
     }
     renderMessages(data.messages || []);
 }
@@ -453,9 +513,11 @@ async function refreshActiveMessagesIfNeeded(threadId, force = false) {
 async function openChat(chat) {
     activeThreadId = chat.id;
     activeMessageLoadedAt = "";
+    activeLLMThreadId = null;
     updateActiveChatHeader();
     messageInput.disabled = false;
     renderChatList(chatCache);
+    await loadLLMThreads(chat.id);
     await loadMessages(chat.id);
     await loadChats(chat.id);
 }
@@ -533,8 +595,17 @@ function connectWebSocket() {
         const chatId = payload.chat_id;
         if (payload.type === "message") {
             if (activeThreadId === chatId && chatId && payload.message) {
-                if (appendMessageIfNeeded(payload.message)) {
-                    renderMessages(activeMessages);
+                const incomingLLMThreadId = payload.message.llm_thread_id || null;
+                if ((!activeLLMThreadId && !incomingLLMThreadId) || activeLLMThreadId === incomingLLMThreadId) {
+                    if (appendMessageIfNeeded(payload.message)) {
+                        renderMessages(activeMessages);
+                    }
+                }
+                else if (activeIsAIChat) {
+                    await loadLLMThreads(chatId, activeLLMThreadId);
+                }
+                if (payload.message.llm_thread_id && !activeLLMThreads.some((thread) => thread.id === payload.message?.llm_thread_id)) {
+                    await loadLLMThreads(chatId, activeLLMThreadId);
                 }
             }
             await loadChats(activeThreadId);
@@ -570,7 +641,7 @@ messageForm.addEventListener("submit", async (event) => {
     if (!content) {
         return;
     }
-    const response = await sendMessage(activeThreadId, content);
+    const response = await sendMessage(activeThreadId, content, activeLLMThreadId);
     if (!response.ok) {
         return;
     }
@@ -583,7 +654,36 @@ messageForm.addEventListener("submit", async (event) => {
 chatRefreshBtn.addEventListener("click", async () => {
     await loadChats(activeThreadId);
     if (activeThreadId) {
+        await loadLLMThreads(activeThreadId, activeLLMThreadId);
         await refreshActiveMessagesIfNeeded(activeThreadId, true);
+    }
+});
+chatThreadSelect.addEventListener("change", async () => {
+    if (!activeThreadId) {
+        return;
+    }
+    const nextID = Number(chatThreadSelect.value || 0);
+    activeLLMThreadId = nextID > 0 ? nextID : null;
+    activeMessageLoadedAt = "";
+    await loadMessages(activeThreadId);
+});
+chatNewTopicBtn.addEventListener("click", async () => {
+    if (!activeThreadId) {
+        return;
+    }
+    const result = await createLLMThread(activeThreadId, "");
+    if (!result.response.ok) {
+        chatSubtitle.textContent = result.data.error || "创建新话题失败";
+        return;
+    }
+    activeLLMThreads = result.data.threads || activeLLMThreads;
+    activeLLMThreadId = result.data.thread?.id || activeLLMThreads[0]?.id || null;
+    activeMessages = [];
+    activeMessageLoadedAt = "";
+    renderLLMThreadBar();
+    renderMessages([]);
+    if (activeThreadId) {
+        await loadMessages(activeThreadId);
     }
 });
 async function init() {

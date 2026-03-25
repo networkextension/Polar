@@ -22,6 +22,7 @@ export type StartChatResponse = {
 
 export type ChatMessage = {
   id: string;
+  llm_thread_id?: number;
   sender_id: string;
   sender_username: string;
   sender_icon?: string;
@@ -35,6 +36,27 @@ export type ChatMessage = {
 
 export type ChatMessagesResponse = {
   messages?: ChatMessage[];
+  active_thread?: LLMThread;
+  active_thread_id?: number;
+};
+
+export type LLMThread = {
+  id: number;
+  chat_thread_id: number;
+  owner_user_id: string;
+  bot_user_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  last_message_at?: string;
+};
+
+export type LLMThreadListResponse = {
+  threads?: LLMThread[];
+  thread?: LLMThread;
+  active_thread?: LLMThread;
+  message?: string;
+  error?: string;
 };
 
 export type SharedMarkdownResponse = {

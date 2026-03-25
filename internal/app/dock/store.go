@@ -194,6 +194,7 @@ type ChatSummary struct {
 type ChatMessage struct {
 	ID              int64      `json:"id"`
 	ThreadID        int64      `json:"thread_id"`
+	LLMThreadID     *int64     `json:"llm_thread_id,omitempty"`
 	SenderID        string     `json:"sender_id"`
 	SenderUsername  string     `json:"sender_username"`
 	SenderIcon      string     `json:"sender_icon"`
@@ -205,6 +206,17 @@ type ChatMessage struct {
 	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
 	DeletedBy       string     `json:"deleted_by,omitempty"`
 	Deleted         bool       `json:"deleted"`
+}
+
+type LLMThread struct {
+	ID            int64      `json:"id"`
+	ChatThreadID  int64      `json:"chat_thread_id"`
+	OwnerUserID   string     `json:"owner_user_id"`
+	BotUserID     string     `json:"bot_user_id"`
+	Title         string     `json:"title"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	LastMessageAt *time.Time `json:"last_message_at,omitempty"`
 }
 
 type TaskPost struct {
@@ -544,9 +556,21 @@ CREATE TABLE IF NOT EXISTS chat_threads (
 	last_message_at TIMESTAMPTZ
 );
 
+CREATE TABLE IF NOT EXISTS llm_threads (
+	id BIGSERIAL PRIMARY KEY,
+	chat_thread_id BIGINT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+	owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	bot_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	title TEXT NOT NULL DEFAULT '',
+	created_at TIMESTAMPTZ NOT NULL,
+	updated_at TIMESTAMPTZ NOT NULL,
+	last_message_at TIMESTAMPTZ
+);
+
 CREATE TABLE IF NOT EXISTS chat_messages (
 	id BIGSERIAL PRIMARY KEY,
 	thread_id BIGINT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+	llm_thread_id BIGINT REFERENCES llm_threads(id) ON DELETE SET NULL,
 	sender_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	message_type TEXT NOT NULL DEFAULT 'text',
 	content TEXT NOT NULL,
@@ -569,6 +593,9 @@ ALTER TABLE chat_messages
 
 ALTER TABLE chat_messages
 	ADD COLUMN IF NOT EXISTS markdown_title TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE chat_messages
+	ADD COLUMN IF NOT EXISTS llm_thread_id BIGINT REFERENCES llm_threads(id) ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS chat_reads (
 	thread_id BIGINT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
@@ -602,7 +629,9 @@ CREATE INDEX IF NOT EXISTS idx_task_result_images_result_id ON task_result_image
 CREATE INDEX IF NOT EXISTS idx_task_result_videos_result_id ON task_result_videos(result_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_threads_pair ON chat_threads(user_low, user_high);
 CREATE INDEX IF NOT EXISTS idx_chat_threads_last_message_at ON chat_threads(last_message_at DESC);
+CREATE INDEX IF NOT EXISTS idx_llm_threads_chat_thread_id_updated_at ON llm_threads(chat_thread_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id_created_at ON chat_messages(thread_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_llm_thread_id_created_at ON chat_messages(llm_thread_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chat_reads_user_id ON chat_reads(user_id);
 `
 	if _, err := db.Exec(schema); err != nil {
@@ -2494,7 +2523,7 @@ func (s *Server) selectTaskApplicant(postID int64, ownerID, applicantID, invitat
 		return 0, 0, "", err
 	}
 
-	messageID, err := s.createChatMessage(thread.ID, ownerID, invitationTemplate, selectedAt)
+	messageID, err := s.createChatMessage(thread.ID, nil, ownerID, invitationTemplate, selectedAt)
 	if err != nil {
 		return 0, 0, "", err
 	}
@@ -2864,24 +2893,26 @@ func (s *Server) getChatSummary(userID string, threadID int64) (*ChatSummary, er
 	return &summary, nil
 }
 
-func (s *Server) listChatMessages(threadID int64, limit, offset int) ([]ChatMessage, bool, error) {
+func (s *Server) listChatMessages(threadID int64, llmThreadID *int64, limit, offset int) ([]ChatMessage, bool, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := s.db.Query(
-		`SELECT m.id, m.thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
+	query := `SELECT m.id, m.thread_id, m.llm_thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
 		   FROM chat_messages m
 		   JOIN users u ON u.id = m.sender_id
-		  WHERE m.thread_id = $1
-		  ORDER BY m.created_at ASC
-		  LIMIT $2 OFFSET $3`,
-		threadID,
-		limit+1,
-		offset,
-	)
+		  WHERE m.thread_id = $1`
+	args := []any{threadID}
+	if llmThreadID != nil {
+		query += ` AND m.llm_thread_id = $2 ORDER BY m.created_at ASC LIMIT $3 OFFSET $4`
+		args = append(args, *llmThreadID, limit+1, offset)
+	} else {
+		query += ` ORDER BY m.created_at ASC LIMIT $2 OFFSET $3`
+		args = append(args, limit+1, offset)
+	}
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, false, err
 	}
@@ -2890,12 +2921,14 @@ func (s *Server) listChatMessages(threadID int64, limit, offset int) ([]ChatMess
 	messages := make([]ChatMessage, 0, limit+1)
 	for rows.Next() {
 		var msg ChatMessage
+		var llmThreadIDValue sql.NullInt64
 		var markdownEntryID sql.NullInt64
 		var deletedAt sql.NullTime
 		var deletedBy sql.NullString
 		if err := rows.Scan(
 			&msg.ID,
 			&msg.ThreadID,
+			&llmThreadIDValue,
 			&msg.SenderID,
 			&msg.SenderUsername,
 			&msg.SenderIcon,
@@ -2913,6 +2946,9 @@ func (s *Server) listChatMessages(threadID int64, limit, offset int) ([]ChatMess
 			msg.DeletedAt = &deletedAt.Time
 			msg.Deleted = true
 			msg.Content = ""
+		}
+		if llmThreadIDValue.Valid {
+			msg.LLMThreadID = &llmThreadIDValue.Int64
 		}
 		if markdownEntryID.Valid {
 			msg.MarkdownEntryID = &markdownEntryID.Int64
@@ -2977,11 +3013,105 @@ func (s *Server) getChatCounterparty(threadID int64, userID string) (string, err
 	}
 }
 
-func (s *Server) createChatMessage(threadID int64, senderID, content string, createdAt time.Time) (int64, error) {
-	return s.createChatMessageWithMetadata(threadID, senderID, "text", content, nil, "", createdAt)
+func (s *Server) listLLMThreads(chatThreadID int64, ownerUserID string) ([]LLMThread, error) {
+	rows, err := s.db.Query(
+		`SELECT id, chat_thread_id, owner_user_id, bot_user_id, title, created_at, updated_at, last_message_at
+		   FROM llm_threads
+		  WHERE chat_thread_id = $1 AND owner_user_id = $2
+		  ORDER BY updated_at DESC, id DESC`,
+		chatThreadID,
+		ownerUserID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]LLMThread, 0)
+	for rows.Next() {
+		var item LLMThread
+		var lastMessageAt sql.NullTime
+		if err := rows.Scan(&item.ID, &item.ChatThreadID, &item.OwnerUserID, &item.BotUserID, &item.Title, &item.CreatedAt, &item.UpdatedAt, &lastMessageAt); err != nil {
+			return nil, err
+		}
+		if lastMessageAt.Valid {
+			item.LastMessageAt = &lastMessageAt.Time
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
-func (s *Server) createChatMessageWithMetadata(threadID int64, senderID, messageType, content string, markdownEntryID *int64, markdownTitle string, createdAt time.Time) (int64, error) {
+func (s *Server) getLLMThread(chatThreadID int64, ownerUserID string, llmThreadID int64) (*LLMThread, error) {
+	var item LLMThread
+	var lastMessageAt sql.NullTime
+	err := s.db.QueryRow(
+		`SELECT id, chat_thread_id, owner_user_id, bot_user_id, title, created_at, updated_at, last_message_at
+		   FROM llm_threads
+		  WHERE id = $1 AND chat_thread_id = $2 AND owner_user_id = $3`,
+		llmThreadID, chatThreadID, ownerUserID,
+	).Scan(&item.ID, &item.ChatThreadID, &item.OwnerUserID, &item.BotUserID, &item.Title, &item.CreatedAt, &item.UpdatedAt, &lastMessageAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if lastMessageAt.Valid {
+		item.LastMessageAt = &lastMessageAt.Time
+	}
+	return &item, nil
+}
+
+func (s *Server) createLLMThread(chatThreadID int64, ownerUserID, botUserID, title string, now time.Time) (*LLMThread, error) {
+	if strings.TrimSpace(title) == "" {
+		title = "新话题"
+	}
+	var item LLMThread
+	var lastMessageAt sql.NullTime
+	err := s.db.QueryRow(
+		`INSERT INTO llm_threads (chat_thread_id, owner_user_id, bot_user_id, title, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $5)
+		 RETURNING id, chat_thread_id, owner_user_id, bot_user_id, title, created_at, updated_at, last_message_at`,
+		chatThreadID, ownerUserID, botUserID, title, now,
+	).Scan(&item.ID, &item.ChatThreadID, &item.OwnerUserID, &item.BotUserID, &item.Title, &item.CreatedAt, &item.UpdatedAt, &lastMessageAt)
+	if err != nil {
+		return nil, err
+	}
+	if lastMessageAt.Valid {
+		item.LastMessageAt = &lastMessageAt.Time
+	}
+	return &item, nil
+}
+
+func (s *Server) ensureDefaultLLMThread(chatThreadID int64, ownerUserID, botUserID string, now time.Time) (*LLMThread, error) {
+	var item LLMThread
+	var lastMessageAt sql.NullTime
+	err := s.db.QueryRow(
+		`SELECT id, chat_thread_id, owner_user_id, bot_user_id, title, created_at, updated_at, last_message_at
+		   FROM llm_threads
+		  WHERE chat_thread_id = $1 AND owner_user_id = $2 AND bot_user_id = $3
+		  ORDER BY updated_at DESC, id DESC
+		  LIMIT 1`,
+		chatThreadID, ownerUserID, botUserID,
+	).Scan(&item.ID, &item.ChatThreadID, &item.OwnerUserID, &item.BotUserID, &item.Title, &item.CreatedAt, &item.UpdatedAt, &lastMessageAt)
+	if err == nil {
+		if lastMessageAt.Valid {
+			item.LastMessageAt = &lastMessageAt.Time
+		}
+		return &item, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	return s.createLLMThread(chatThreadID, ownerUserID, botUserID, "新话题", now)
+}
+
+func (s *Server) createChatMessage(threadID int64, llmThreadID *int64, senderID, content string, createdAt time.Time) (int64, error) {
+	return s.createChatMessageWithMetadata(threadID, llmThreadID, senderID, "text", content, nil, "", createdAt)
+}
+
+func (s *Server) createChatMessageWithMetadata(threadID int64, llmThreadID *int64, senderID, messageType, content string, markdownEntryID *int64, markdownTitle string, createdAt time.Time) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
@@ -2994,10 +3124,11 @@ func (s *Server) createChatMessageWithMetadata(threadID int64, senderID, message
 
 	var id int64
 	err = tx.QueryRow(
-		`INSERT INTO chat_messages (thread_id, sender_id, message_type, content, markdown_entry_id, markdown_title, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO chat_messages (thread_id, llm_thread_id, sender_id, message_type, content, markdown_entry_id, markdown_title, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 RETURNING id`,
 		threadID,
+		llmThreadID,
 		senderID,
 		messageType,
 		content,
@@ -3019,6 +3150,17 @@ func (s *Server) createChatMessageWithMetadata(threadID int64, senderID, message
 	); err != nil {
 		return 0, err
 	}
+	if llmThreadID != nil {
+		if _, err = tx.Exec(
+			`UPDATE llm_threads
+			    SET last_message_at = $1, updated_at = $1
+			  WHERE id = $2`,
+			createdAt,
+			*llmThreadID,
+		); err != nil {
+			return 0, err
+		}
+	}
 
 	if err = tx.Commit(); err != nil {
 		return 0, err
@@ -3028,11 +3170,12 @@ func (s *Server) createChatMessageWithMetadata(threadID int64, senderID, message
 
 func (s *Server) getChatMessageByID(messageID int64) (*ChatMessage, error) {
 	var msg ChatMessage
+	var llmThreadID sql.NullInt64
 	var markdownEntryID sql.NullInt64
 	var deletedAt sql.NullTime
 	var deletedBy sql.NullString
 	err := s.db.QueryRow(
-		`SELECT m.id, m.thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
+		`SELECT m.id, m.thread_id, m.llm_thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
 		   FROM chat_messages m
 		   JOIN users u ON u.id = m.sender_id
 		  WHERE m.id = $1`,
@@ -3040,6 +3183,7 @@ func (s *Server) getChatMessageByID(messageID int64) (*ChatMessage, error) {
 	).Scan(
 		&msg.ID,
 		&msg.ThreadID,
+		&llmThreadID,
 		&msg.SenderID,
 		&msg.SenderUsername,
 		&msg.SenderIcon,
@@ -3062,6 +3206,9 @@ func (s *Server) getChatMessageByID(messageID int64) (*ChatMessage, error) {
 		msg.Deleted = true
 		msg.Content = ""
 	}
+	if llmThreadID.Valid {
+		msg.LLMThreadID = &llmThreadID.Int64
+	}
 	if markdownEntryID.Valid {
 		msg.MarkdownEntryID = &markdownEntryID.Int64
 	}
@@ -3071,20 +3218,23 @@ func (s *Server) getChatMessageByID(messageID int64) (*ChatMessage, error) {
 	return &msg, nil
 }
 
-func (s *Server) listRecentChatMessages(threadID int64, limit int) ([]ChatMessage, error) {
+func (s *Server) listRecentChatMessages(threadID int64, llmThreadID *int64, limit int) ([]ChatMessage, error) {
 	if limit <= 0 {
 		limit = 10
 	}
-	rows, err := s.db.Query(
-		`SELECT m.id, m.thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
+	query := `SELECT m.id, m.thread_id, m.llm_thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
 		   FROM chat_messages m
 		   JOIN users u ON u.id = m.sender_id
-		  WHERE m.thread_id = $1
-		  ORDER BY m.created_at DESC
-		  LIMIT $2`,
-		threadID,
-		limit,
-	)
+		  WHERE m.thread_id = $1`
+	args := []any{threadID}
+	if llmThreadID != nil {
+		query += ` AND m.llm_thread_id = $2 ORDER BY m.created_at DESC LIMIT $3`
+		args = append(args, *llmThreadID, limit)
+	} else {
+		query += ` ORDER BY m.created_at DESC LIMIT $2`
+		args = append(args, limit)
+	}
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -3093,12 +3243,14 @@ func (s *Server) listRecentChatMessages(threadID int64, limit int) ([]ChatMessag
 	items := make([]ChatMessage, 0, limit)
 	for rows.Next() {
 		var msg ChatMessage
+		var llmThreadIDValue sql.NullInt64
 		var markdownEntryID sql.NullInt64
 		var deletedAt sql.NullTime
 		var deletedBy sql.NullString
 		if err := rows.Scan(
 			&msg.ID,
 			&msg.ThreadID,
+			&llmThreadIDValue,
 			&msg.SenderID,
 			&msg.SenderUsername,
 			&msg.SenderIcon,
@@ -3115,6 +3267,9 @@ func (s *Server) listRecentChatMessages(threadID int64, limit int) ([]ChatMessag
 		if deletedAt.Valid {
 			msg.DeletedAt = &deletedAt.Time
 			msg.Deleted = true
+		}
+		if llmThreadIDValue.Valid {
+			msg.LLMThreadID = &llmThreadIDValue.Int64
 		}
 		if markdownEntryID.Valid {
 			msg.MarkdownEntryID = &markdownEntryID.Int64

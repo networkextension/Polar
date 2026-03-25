@@ -1694,6 +1694,29 @@ textarea {
   gap: 12px;
 }
 
+.chat-topic-bar {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+}
+
+.chat-topic-label {
+  margin: 0;
+}
+
+.chat-topic-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.chat-topic-select {
+  margin-bottom: 0;
+}
+
 .chat-title {
   font-size: 18px;
   font-weight: 700;

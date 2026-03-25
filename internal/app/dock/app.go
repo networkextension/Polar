@@ -288,6 +288,8 @@ func (s *Server) registerRoutes() {
 		api.POST("/tasks/:id/results", s.AuthMiddleware(), s.handleTaskResultCreate)
 		api.GET("/chats", s.AuthMiddleware(), s.handleChatList)
 		api.POST("/chats/start", s.AuthMiddleware(), s.handleChatStart)
+		api.GET("/chats/:id/llm-threads", s.AuthMiddleware(), s.handleChatLLMThreads)
+		api.POST("/chats/:id/llm-threads", s.AuthMiddleware(), s.handleChatLLMThreadCreate)
 		api.GET("/chats/:id/messages", s.AuthMiddleware(), s.handleChatMessages)
 		api.POST("/chats/:id/messages", s.AuthMiddleware(), s.handleChatSend)
 		api.GET("/chats/:id/messages/:messageId/markdown", s.AuthMiddleware(), s.handleChatSharedMarkdown)

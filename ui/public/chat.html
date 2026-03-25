@@ -42,7 +42,16 @@
               <div id="chatTitle" class="chat-title">选择一个会话</div>
               <div id="chatSubtitle" class="chat-subtitle">从左侧选择或从帖子用户名进入</div>
             </div>
-            <button id="chatRefreshBtn" class="btn-inline btn-secondary" type="button">刷新</button>
+            <div class="inline-actions">
+              <button id="chatNewTopicBtn" class="btn-inline btn-secondary" type="button" hidden>新话题</button>
+              <button id="chatRefreshBtn" class="btn-inline btn-secondary" type="button">刷新</button>
+            </div>
+          </div>
+          <div id="chatThreadBar" class="chat-topic-bar" hidden>
+            <label class="form-label chat-topic-label" for="chatThreadSelect">当前话题</label>
+            <div class="chat-topic-controls">
+              <select id="chatThreadSelect" class="input chat-topic-select"></select>
+            </div>
           </div>
           <div id="messageList" class="message-list"></div>
           <form id="messageForm" class="message-form">
