@@ -542,9 +542,6 @@ async function loadSiteAdminData() {
             }
             if (tagResult.response.ok) {
                 currentTags = tagResult.data.tags || [];
-            const { response, data } = await fetchTags();
-            if (response.ok) {
-                currentTags = data.tags || [];
                 renderTagList(currentTags);
             }
             else {
@@ -1244,46 +1241,38 @@ passkeyRegisterBtn.addEventListener("click", async () => {
     try {
         const { response: beginResponse, data: beginResult } = await beginPasskeyRegistration();
         if (!beginResponse.ok) {
-            passkeyStatus.textContent = beginResult.error || t("dashboard.passkeyBeginFailed");
-        setStatusMessage(passkeyStatus, "当前浏览器不支持 Passkey。", "error");
-        return;
-    }
-    setStatusMessage(passkeyStatus, "正在启动 Passkey...");
-    try {
-        const { response: beginResponse, data: beginResult } = await beginPasskeyRegistration();
-        if (!beginResponse.ok) {
-            setStatusMessage(passkeyStatus, beginResult.error || "无法发起 Passkey 绑定", "error");
+            setStatusMessage(passkeyStatus, beginResult.error || t("dashboard.passkeyBeginFailed"), "error");
             return;
         }
+
         const publicKey = beginResult.publicKey;
         publicKey.challenge = base64URLToBuffer(publicKey.challenge);
         publicKey.user.id = base64URLToBuffer(publicKey.user.id);
+
         if (publicKey.excludeCredentials) {
             publicKey.excludeCredentials = publicKey.excludeCredentials.map((cred) => ({
                 ...cred,
                 id: base64URLToBuffer(cred.id),
             }));
         }
-        const credential = await navigator.credentials.create({
-            publicKey: publicKey,
-        });
+
+        const credential = await navigator.credentials.create({ publicKey });
         const payload = credentialToJSON(credential);
-        const { response: finishResponse, data: finishResult } = await finishPasskeyRegistration(beginResult.session_id || "", payload);
-        passkeyStatus.textContent = finishResponse.ok
-            ? t("dashboard.passkeySuccess")
-            : finishResult.error || t("dashboard.passkeyFailed");
-    }
-    catch {
-        passkeyStatus.textContent = t("dashboard.networkErrorPeriod");
+
+        const { response: finishResponse, data: finishResult } = await finishPasskeyRegistration(
+            beginResult.session_id || "",
+            payload
+        );
+
         if (!finishResponse.ok) {
-            setStatusMessage(passkeyStatus, finishResult.error || "Passkey 绑定失败", "error");
+            setStatusMessage(passkeyStatus, finishResult.error || t("dashboard.passkeyFailed"), "error");
             return;
         }
+
         renderPasskeys(finishResult.credentials || []);
-        setStatusMessage(passkeyStatus, finishResult.message || "Passkey 绑定成功！", "success");
-    }
-    catch {
-        setStatusMessage(passkeyStatus, "网络错误，请重试", "error");
+        setStatusMessage(passkeyStatus, finishResult.message || t("dashboard.passkeySuccess"), "success");
+    } catch {
+        setStatusMessage(passkeyStatus, t("dashboard.networkErrorPeriod"), "error");
     }
 });
 const initialTheme = initStoredTheme();
