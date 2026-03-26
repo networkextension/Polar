@@ -11,9 +11,11 @@ import {
   fetchEntry,
   fetchLLMConfigs,
   fetchLoginHistory,
+  fetchPasskeys,
   fetchSiteSettings,
   fetchTags,
   finishPasskeyRegistration,
+  removePasskey,
   removeBotUser,
   removeLLMConfig,
   removeTag,
@@ -43,7 +45,9 @@ import type {
   LLMConfig,
   LLMConfigPayload,
   LoginRecord,
+  PasskeyCredential,
   SiteSettings,
+  SystemInfo,
   Tag,
   TagPayload,
 } from "./types/dashboard.js";
@@ -64,6 +68,7 @@ const loginHistoryList = byId<HTMLUListElement>("loginHistoryList");
 const themeToggleBtn = byId<HTMLButtonElement>("themeToggleBtn");
 const passkeyRegisterBtn = byId<HTMLButtonElement>("passkeyRegisterBtn");
 const passkeyStatus = byId<HTMLElement>("passkeyStatus");
+const passkeyList = byId<HTMLUListElement>("passkeyList");
 const userIcon = byId<HTMLImageElement>("userIcon");
 const iconFile = byId<HTMLInputElement>("iconFile");
 const iconEditor = byId<HTMLElement>("iconEditor");
@@ -75,6 +80,10 @@ const iconStatus = byId<HTMLElement>("iconStatus");
 const settingsCardAvatar = byId<HTMLImageElement>("settingsCardAvatar");
 const settingsCardName = byId<HTMLElement>("settingsCardName");
 const settingsCardMeta = byId<HTMLElement>("settingsCardMeta");
+const siteManageCard = byId<HTMLElement>("siteManageCard");
+const siteManageCardIcon = byId<HTMLImageElement>("siteManageCardIcon");
+const siteManageCardName = byId<HTMLElement>("siteManageCardName");
+const siteManageCardMeta = byId<HTMLElement>("siteManageCardMeta");
 const settingsProfileName = byId<HTMLElement>("settingsProfileName");
 const settingsProfileMeta = byId<HTMLElement>("settingsProfileMeta");
 const addTagBtn = byId<HTMLButtonElement>("addTagBtn");
@@ -107,6 +116,11 @@ const llmConfigTestBtn = byId<HTMLButtonElement>("llmConfigTestBtn");
 const llmConfigSubmitBtn = byId<HTMLButtonElement>("llmConfigSubmitBtn");
 const llmConfigStatus = byId<HTMLElement>("llmConfigStatus");
 const llmConfigList = byId<HTMLUListElement>("llmConfigList");
+const settingsGitTagVersion = byId<HTMLElement>("settingsGitTagVersion");
+const settingsOS = byId<HTMLElement>("settingsOS");
+const settingsCPUArch = byId<HTMLElement>("settingsCPUArch");
+const settingsPartitionCapacity = byId<HTMLElement>("settingsPartitionCapacity");
+const settingsPartitionPath = byId<HTMLElement>("settingsPartitionPath");
 const botUserForm = byId<HTMLFormElement>("botUserForm");
 const botUserNameInput = byId<HTMLInputElement>("botUserNameInput");
 const botUserConfigSelect = byId<HTMLSelectElement>("botUserConfigSelect");
@@ -155,7 +169,7 @@ let editingBotUserId: number | null = null;
 let currentLLMConfigs: LLMConfig[] = [];
 let currentAvailableLLMConfigs: LLMConfig[] = [];
 let currentBotUsers: BotUser[] = [];
-let activeSettingsSection: "profile" | "personalization" | "settings" | "bots" | "site" = "personalization";
+let activeSettingsSection: "profile" | "personalization" | "settings" | "system" | "bots" | "site" = "personalization";
 
 function setStatusMessage(element: HTMLElement, message: string, tone: "default" | "success" | "error" = "default"): void {
   element.textContent = message;
@@ -170,6 +184,9 @@ function setStatusMessage(element: HTMLElement, message: string, tone: "default"
 function setModalOpen(modal: HTMLElement, open: boolean): void {
   modal.classList.toggle("open", open);
   modal.setAttribute("aria-hidden", open ? "false" : "true");
+  if (modal === siteAdminModal || modal === tagModal) {
+    document.body.classList.toggle("modal-open", open);
+  }
 }
 
 function isMobileLayout(): boolean {
@@ -197,7 +214,7 @@ function syncThemeButton(theme: ThemeName): void {
   themeCurrentValue.textContent = theme === "mono" ? t("dashboard.themeMonochrome") : t("dashboard.themeDefault");
 }
 
-function switchSettingsSection(section: "profile" | "personalization" | "settings" | "bots" | "site"): void {
+function switchSettingsSection(section: "profile" | "personalization" | "settings" | "system" | "bots" | "site"): void {
   activeSettingsSection = section;
   const titles: Record<typeof activeSettingsSection, { title: string; lead: string }> = {
     profile: {
@@ -211,6 +228,10 @@ function switchSettingsSection(section: "profile" | "personalization" | "setting
     settings: {
       title: t("dashboard.settingsTitle"),
       lead: "",
+    },
+    system: {
+      title: "系统信息",
+      lead: "查看当前实例的版本、系统环境与程序所在分区的剩余容量。",
     },
     bots: {
       title: t("dashboard.botsManagementTitle"),
@@ -248,6 +269,72 @@ function formatLoginMethod(method?: string): string {
   return t("dashboard.loginMethodPassword");
 }
 
+function formatPasskeyLabel(credentialId: string): string {
+  if (!credentialId) {
+    return "Passkey";
+  }
+  if (credentialId.length <= 12) {
+    return credentialId;
+  }
+  return `${credentialId.slice(0, 6)}...${credentialId.slice(-6)}`;
+}
+
+function renderPasskeys(credentials: PasskeyCredential[] = []): void {
+  const count = credentials.length;
+  if (!count) {
+    setStatusMessage(passkeyStatus, "未绑定 Passkey。");
+    passkeyRegisterBtn.textContent = "绑定 Passkey";
+    passkeyList.innerHTML = "<li>还没有绑定任何 Passkey</li>";
+    return;
+  }
+
+  setStatusMessage(passkeyStatus, `已绑定 ${count} 个 Passkey。`, "success");
+  passkeyRegisterBtn.textContent = "继续绑定";
+  passkeyList.innerHTML = credentials
+    .map((item) => {
+      const createdAt = new Date(item.created_at).toLocaleString();
+      const updatedAt = new Date(item.updated_at).toLocaleString();
+      return `
+        <li>
+          <div class="meta-title">已绑定 · ${formatPasskeyLabel(item.credential_id)}</div>
+          <div class="meta-subtitle">创建时间：${createdAt}</div>
+          <div class="meta-subtitle">最近更新时间：${updatedAt}</div>
+          <div class="meta-time">
+            <button class="btn-inline btn-secondary" type="button" data-passkey-delete="${item.credential_id}">删除</button>
+          </div>
+        </li>
+      `;
+    })
+    .join("");
+
+  passkeyList.querySelectorAll<HTMLButtonElement>("[data-passkey-delete]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const credentialId = button.dataset.passkeyDelete || "";
+      if (!credentialId) {
+        return;
+      }
+      if (!window.confirm("确认删除这个 Passkey 吗？删除后将不能再用它快速登录。")) {
+        return;
+      }
+      button.disabled = true;
+      setStatusMessage(passkeyStatus, "正在删除 Passkey...");
+      try {
+        const { response, data } = await removePasskey(credentialId);
+        if (!response.ok) {
+          setStatusMessage(passkeyStatus, data.error || "删除失败", "error");
+          button.disabled = false;
+          return;
+        }
+        renderPasskeys(data.credentials || []);
+        setStatusMessage(passkeyStatus, data.message || "Passkey 已删除", "success");
+      } catch {
+        setStatusMessage(passkeyStatus, "网络错误，请重试", "error");
+        button.disabled = false;
+      }
+    });
+  });
+}
+
 function defaultSiteIcon(name: string): string {
   return makeDefaultAvatar(name || "站", 160);
 }
@@ -260,15 +347,29 @@ function formatCertificateMeta(cert?: ApplePushCertificate): string {
   return t("dashboard.certMeta", { filename: cert.file_name, time: uploadedAt });
 }
 
+function renderSystemInfo(systemInfo?: SystemInfo): void {
+  settingsGitTagVersion.textContent = systemInfo?.git_tag_version || "未知";
+  settingsOS.textContent = systemInfo?.os || "未知";
+  settingsCPUArch.textContent = systemInfo?.cpu_arch || "未知";
+  settingsPartitionCapacity.textContent = systemInfo?.partition_capacity || "未知";
+  settingsPartitionPath.textContent = systemInfo?.partition_path
+    ? `路径：${systemInfo.partition_path}`
+    : "";
+}
+
 function renderSiteSettings(site?: SiteSettings): void {
-  const safeSite = site || { name: "Polar-", description: "", icon_url: "" };
+  const safeSite: SiteSettings = site || { name: "Polar-", description: "", icon_url: "" };
   siteNameInput.value = safeSite.name || "Polar-";
   siteDescriptionInput.value = safeSite.description || "";
   siteIconPreview.src = safeSite.icon_url || defaultSiteIcon(safeSite.name || "Polar-");
+  siteManageCardIcon.src = safeSite.icon_url || defaultSiteIcon(safeSite.name || "站");
+  siteManageCardName.textContent = safeSite.name || "站点管理";
+  siteManageCardMeta.textContent = safeSite.description || "维护站点信息、证书与 Tag";
   applePushDevMeta.textContent = formatCertificateMeta(safeSite.apple_push_dev_cert);
   applePushProdMeta.textContent = formatCertificateMeta(safeSite.apple_push_prod_cert);
   applePushDevDeleteBtn.disabled = !safeSite.apple_push_dev_cert?.file_url;
   applePushProdDeleteBtn.disabled = !safeSite.apple_push_prod_cert?.file_url;
+  renderSystemInfo(safeSite.system_info);
   renderSiteBrand(safeSite);
 }
 
@@ -421,6 +522,16 @@ async function loadLoginHistory(): Promise<void> {
     .join("");
 }
 
+async function loadPasskeys(): Promise<void> {
+  const { response, data } = await fetchPasskeys();
+  if (!response.ok) {
+    setStatusMessage(passkeyStatus, data.error || "无法加载 Passkey 状态", "error");
+    passkeyList.innerHTML = "<li>无法加载 Passkey 列表</li>";
+    return;
+  }
+  renderPasskeys(data.credentials || []);
+}
+
 async function loadProfile(): Promise<void> {
   const { response, data } = await fetchCurrentUser();
   if (!response.ok) {
@@ -437,6 +548,7 @@ async function loadProfile(): Promise<void> {
   addTagBtn.disabled = !isAdmin;
   addTagBtn.textContent = isAdmin ? t("dashboard.newTag") : t("dashboard.adminOnlyTag");
   addTagBtn.hidden = !isAdmin;
+  siteManageCard.hidden = !isAdmin;
   siteAdminPanel.hidden = !isAdmin;
   settingsNavButtons.forEach((button) => {
     if (button.dataset.settingsNav === "site") {
@@ -454,6 +566,17 @@ async function loadProfile(): Promise<void> {
 
 async function loadSiteAdminData(): Promise<void> {
   const tasks: Array<Promise<unknown>> = [
+    (async () => {
+      const { response, data } = await fetchSiteSettings();
+      if (response.ok) {
+        renderSiteSettings(data.site);
+        return;
+      }
+      renderSystemInfo();
+      if (isAdmin) {
+        siteStatus.textContent = data.error || "无法加载站点信息";
+      }
+    })(),
     (async () => {
       const [ownResult, availableResult] = await Promise.all([fetchLLMConfigs(), fetchAvailableLLMConfigs()]);
       if (ownResult.response.ok) {
@@ -497,6 +620,9 @@ async function loadSiteAdminData(): Promise<void> {
 
         if (tagResult.response.ok) {
           currentTags = tagResult.data.tags || [];
+        const { response, data } = await fetchTags();
+        if (response.ok) {
+          currentTags = data.tags || [];
           renderTagList(currentTags);
         } else {
           tagList.innerHTML = `<li class="tag-item tag-item-empty">${t("dashboard.tagListLoadFailed")}</li>`;
@@ -527,11 +653,15 @@ function closeTagModal(): void {
   setModalOpen(tagModal, false);
 }
 
-function openSiteAdminModal(section: "profile" | "personalization" | "settings" = "personalization"): void {
+function openSiteAdminModal(section: "profile" | "personalization" | "settings" | "system" = "personalization"): void {
   switchSettingsSection(section);
   setModalOpen(siteAdminModal, true);
   if (section === "settings") {
     llmConfigNameInput.focus();
+    return;
+  }
+  if (section === "system") {
+    settingsSectionLead.focus?.();
     return;
   }
   if (section === "profile") {
@@ -657,7 +787,7 @@ addTagBtn.addEventListener("click", () => {
 
 settingsOpenButtons.forEach((button) => {
   button.addEventListener("click", () => {
-    const target = (button.dataset.settingsTarget as "profile" | "personalization" | "settings" | undefined) || "personalization";
+    const target = (button.dataset.settingsTarget as "profile" | "personalization" | "settings" | "system" | undefined) || "personalization";
     openSiteAdminModal(target);
   });
 });
@@ -665,7 +795,14 @@ siteAdminModalCloseBtn.addEventListener("click", closeSiteAdminModal);
 query<HTMLElement>(siteAdminModal, ".modal-backdrop").addEventListener("click", closeSiteAdminModal);
 settingsNavButtons.forEach((button) => {
   button.addEventListener("click", () => {
-    const target = button.dataset.settingsNav as "profile" | "personalization" | "settings" | undefined;
+    const target = button.dataset.settingsNav as
+      | "profile"
+      | "personalization"
+      | "settings"
+      | "system"
+      | "bots"
+      | "site"
+      | undefined;
     if (!target) {
       return;
     }
@@ -1267,6 +1404,15 @@ passkeyRegisterBtn.addEventListener("click", async () => {
     const { response: beginResponse, data: beginResult } = await beginPasskeyRegistration();
     if (!beginResponse.ok) {
       passkeyStatus.textContent = beginResult.error || t("dashboard.passkeyBeginFailed");
+    setStatusMessage(passkeyStatus, "当前浏览器不支持 Passkey。", "error");
+    return;
+  }
+
+  setStatusMessage(passkeyStatus, "正在启动 Passkey...");
+  try {
+    const { response: beginResponse, data: beginResult } = await beginPasskeyRegistration();
+    if (!beginResponse.ok) {
+      setStatusMessage(passkeyStatus, beginResult.error || "无法发起 Passkey 绑定", "error");
       return;
     }
 
@@ -1299,6 +1445,14 @@ passkeyRegisterBtn.addEventListener("click", async () => {
       : finishResult.error || t("dashboard.passkeyFailed");
   } catch {
     passkeyStatus.textContent = t("common.networkErrorRetry");
+    if (!finishResponse.ok) {
+      setStatusMessage(passkeyStatus, finishResult.error || "Passkey 绑定失败", "error");
+      return;
+    }
+    renderPasskeys(finishResult.credentials || []);
+    setStatusMessage(passkeyStatus, finishResult.message || "Passkey 绑定成功！", "success");
+  } catch {
+    setStatusMessage(passkeyStatus, "网络错误，请重试", "error");
   }
 });
 
@@ -1310,5 +1464,5 @@ switchSettingsSection(activeSettingsSection);
 void (async () => {
   await hydrateSiteBrand();
   await loadProfile();
-  await Promise.all([loadEntries(true), loadLoginHistory(), loadSiteAdminData()]);
+  await Promise.all([loadEntries(true), loadLoginHistory(), loadPasskeys(), loadSiteAdminData()]);
 })();

@@ -53,7 +53,7 @@ func (s *Server) handleSiteSettingsGet(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"site": settings,
+		"site": s.hydrateSiteSettings(settings),
 	})
 }
 
@@ -87,7 +87,7 @@ func (s *Server) handleSiteSettingsUpdate(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "保存成功",
-		"site":    settings,
+		"site":    s.hydrateSiteSettings(settings),
 	})
 }
 
@@ -154,7 +154,7 @@ func (s *Server) handleSiteIconUpload(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":  "更新成功",
 		"icon_url": iconURL,
-		"site":     settings,
+		"site":     s.hydrateSiteSettings(settings),
 	})
 }
 
@@ -220,7 +220,7 @@ func (s *Server) handleApplePushCertificateUpload(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":     "Apple Push 证书已上传",
 		"environment": environment,
-		"site":        settings,
+		"site":        s.hydrateSiteSettings(settings),
 	})
 }
 
@@ -261,6 +261,6 @@ func (s *Server) handleApplePushCertificateDelete(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":     "Apple Push 证书已删除",
 		"environment": environment,
-		"site":        settings,
+		"site":        s.hydrateSiteSettings(settings),
 	})
 }

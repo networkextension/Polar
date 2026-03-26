@@ -35,6 +35,11 @@ export async function updateLLMThread(threadId, llmThreadId, title) {
         body: { title },
     });
 }
+export async function deleteLLMThread(threadId, llmThreadId) {
+    return requestJson(`/api/chats/${threadId}/llm-threads/${llmThreadId}`, {
+        method: "DELETE",
+    });
+}
 export async function switchLLMThreadConfig(threadId, llmThreadId, llmConfigId) {
     return requestJson(`/api/chats/${threadId}/llm-threads/${llmThreadId}/config`, {
         method: "PUT",

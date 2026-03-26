@@ -186,7 +186,77 @@ func (s *Server) handlePasskeyRegisterFinish(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Passkey 绑定成功"})
+	items, err := s.listWebAuthnCredentialSummaries(user.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "Passkey 绑定成功",
+		"credentials":  items,
+		"count":        len(items),
+		"has_passkeys": len(items) > 0,
+	})
+}
+
+func (s *Server) handlePasskeyList(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	items, err := s.listWebAuthnCredentialSummaries(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"credentials":  items,
+		"count":        len(items),
+		"has_passkeys": len(items) > 0,
+	})
+}
+
+func (s *Server) handlePasskeyDelete(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	credentialID := strings.TrimSpace(c.Param("credentialId"))
+	if credentialID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Passkey"})
+		return
+	}
+
+	deleted, err := s.deleteWebAuthnCredential(userIDStr, credentialID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除 Passkey 失败"})
+		return
+	}
+	if !deleted {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Passkey 不存在"})
+		return
+	}
+
+	items, err := s.listWebAuthnCredentialSummaries(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "Passkey 已删除",
+		"credentials":  items,
+		"count":        len(items),
+		"has_passkeys": len(items) > 0,
+	})
 }
 
 func (s *Server) handlePasskeyLoginBegin(c *gin.Context) {

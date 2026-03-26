@@ -68,6 +68,20 @@
                 </div>
                 <button id="logoutBtn" class="btn-secondary group-action-btn" type="button" data-i18n="dashboard.logout">Log out</button>
               </div>
+              <div id="siteManageCard" class="group-card settings-entry-card" hidden>
+                <div class="settings-entry-head">
+                  <img id="siteManageCardIcon" class="avatar avatar-sm" alt="站点图标" />
+                  <div class="settings-entry-copy">
+                    <div id="siteManageCardName" class="group-name">站点管理</div>
+                    <div id="siteManageCardMeta" class="group-meta">维护站点信息、证书与 Tag</div>
+                  </div>
+                </div>
+                <div class="settings-entry-actions">
+                  <button id="openSiteManageCardBtn" class="btn-secondary group-action-btn" type="button" data-open-settings-center data-settings-target="site">
+                    站点管理
+                  </button>
+                </div>
+              </div>
             </div>
           </aside>
 
@@ -131,6 +145,10 @@
                 <span class="settings-center-nav-icon">⚙</span>
                 <span data-i18n="dashboard.navSettings">Settings</span>
               </button>
+              <button class="settings-center-nav-btn" type="button" data-settings-nav="system">
+                <span class="settings-center-nav-icon">⌘</span>
+                <span>系统信息</span>
+              </button>
               <button class="settings-center-nav-btn" type="button" data-settings-nav="bots">
                 <span class="settings-center-nav-icon">◉</span>
                 <span data-i18n="dashboard.navBots">Bot Management</span>
@@ -188,6 +206,7 @@
                   <button id="passkeyRegisterBtn" class="btn-inline btn-secondary" type="button" data-i18n="dashboard.bindPasskey">Bind Passkey</button>
                 </div>
                 <div id="passkeyStatus" class="status-text"></div>
+                <ul id="passkeyList" class="meta-list"></ul>
               </div>
 
               <div class="settings-section-card">
@@ -281,7 +300,38 @@
                     <ul id="llmConfigList" class="tag-list"></ul>
                   </div>
                 </div>
+              </div>
+            </section>
 
+            <section class="settings-panel" data-settings-panel="system" hidden>
+              <div class="site-admin-panel">
+                <div class="settings-section-card">
+                  <div class="settings-section-heading">
+                    <div>
+                      <div class="settings-section-title">运行信息</div>
+                      <p class="settings-section-text">查看当前实例的版本、系统环境和程序所在分区剩余容量。</p>
+                    </div>
+                  </div>
+                  <div class="settings-info-grid">
+                    <div class="settings-info-item">
+                      <span class="settings-info-label">Git Tag Version</span>
+                      <strong id="settingsGitTagVersion" class="settings-info-value">加载中...</strong>
+                    </div>
+                    <div class="settings-info-item">
+                      <span class="settings-info-label">OS</span>
+                      <strong id="settingsOS" class="settings-info-value">加载中...</strong>
+                    </div>
+                    <div class="settings-info-item">
+                      <span class="settings-info-label">CPU 架构</span>
+                      <strong id="settingsCPUArch" class="settings-info-value">加载中...</strong>
+                    </div>
+                    <div class="settings-info-item">
+                      <span class="settings-info-label">运行分区剩余容量</span>
+                      <strong id="settingsPartitionCapacity" class="settings-info-value">加载中...</strong>
+                      <span id="settingsPartitionPath" class="settings-info-meta"></span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </section>
 

@@ -361,6 +361,58 @@ func (s *Server) handleChatLLMThreadUpdate(c *gin.Context) {
 	})
 }
 
+func (s *Server) handleChatLLMThreadDelete(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	threadID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || threadID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的会话"})
+		return
+	}
+	participant, err := s.isChatParticipant(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if !participant {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该会话"})
+		return
+	}
+
+	llmThreadID, err := strconv.ParseInt(c.Param("threadId"), 10, 64)
+	if err != nil || llmThreadID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的话题"})
+		return
+	}
+
+	deleted, err := s.deleteLLMThread(threadID, userIDStr, llmThreadID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
+		return
+	}
+	if !deleted {
+		c.JSON(http.StatusNotFound, gin.H{"error": "话题不存在"})
+		return
+	}
+
+	items, err := s.listLLMThreads(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"threads":       items,
+		"message":       "话题已删除",
+		"thread":        nil,
+		"active_thread": nil,
+	})
+}
+
 func (s *Server) handleChatLLMThreadConfigUpdate(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	userIDStr, ok := userID.(string)

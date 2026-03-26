@@ -94,7 +94,16 @@ type SiteSettings struct {
 	IconURL           string                `json:"icon_url"`
 	ApplePushDevCert  *ApplePushCertificate `json:"apple_push_dev_cert,omitempty"`
 	ApplePushProdCert *ApplePushCertificate `json:"apple_push_prod_cert,omitempty"`
+	SystemInfo        *SystemInfo           `json:"system_info,omitempty"`
 	UpdatedAt         time.Time             `json:"updated_at"`
+}
+
+type SystemInfo struct {
+	GitTagVersion     string `json:"git_tag_version"`
+	OS                string `json:"os"`
+	CPUArch           string `json:"cpu_arch"`
+	PartitionPath     string `json:"partition_path"`
+	PartitionCapacity string `json:"partition_capacity"`
 }
 
 type LLMConfig struct {
@@ -224,6 +233,12 @@ type LLMThread struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 	LastMessageAt *time.Time `json:"last_message_at,omitempty"`
+}
+
+type WebAuthnCredentialSummary struct {
+	CredentialID string    `json:"credential_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type TaskPost struct {
@@ -1310,6 +1325,33 @@ func (s *Server) listWebAuthnCredentials(userID string) ([]webauthn.Credential, 
 	return creds, nil
 }
 
+func (s *Server) listWebAuthnCredentialSummaries(userID string) ([]WebAuthnCredentialSummary, error) {
+	rows, err := s.db.Query(
+		`SELECT credential_id, created_at, updated_at
+		   FROM webauthn_credentials
+		  WHERE user_id = $1
+		  ORDER BY updated_at DESC, created_at DESC, credential_id DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]WebAuthnCredentialSummary, 0)
+	for rows.Next() {
+		var item WebAuthnCredentialSummary
+		if err := rows.Scan(&item.CredentialID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func (s *Server) upsertWebAuthnCredential(userID string, credential *webauthn.Credential) error {
 	if credential == nil {
 		return errors.New("credential is nil")
@@ -1329,6 +1371,23 @@ func (s *Server) upsertWebAuthnCredential(userID string, credential *webauthn.Cr
 		payload,
 	)
 	return err
+}
+
+func (s *Server) deleteWebAuthnCredential(userID, credentialID string) (bool, error) {
+	result, err := s.db.Exec(
+		`DELETE FROM webauthn_credentials
+		  WHERE credential_id = $1 AND user_id = $2`,
+		credentialID,
+		userID,
+	)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
 }
 
 func (s *Server) updateUserIcon(userID, iconURL string) error {
@@ -3237,6 +3296,24 @@ func (s *Server) updateLLMThreadTitle(chatThreadID int64, ownerUserID string, ll
 		return nil, err
 	}
 	return s.getLLMThread(chatThreadID, ownerUserID, updatedID)
+}
+
+func (s *Server) deleteLLMThread(chatThreadID int64, ownerUserID string, llmThreadID int64) (bool, error) {
+	result, err := s.db.Exec(
+		`DELETE FROM llm_threads
+		  WHERE id = $1 AND chat_thread_id = $2 AND owner_user_id = $3`,
+		llmThreadID,
+		chatThreadID,
+		ownerUserID,
+	)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
 }
 
 func (s *Server) updateLLMThreadConfig(chatThreadID int64, ownerUserID string, llmThreadID, llmConfigID int64, now time.Time) (*LLMThread, error) {

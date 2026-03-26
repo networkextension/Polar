@@ -55,7 +55,16 @@ export type SiteSettings = {
   icon_url?: string;
   apple_push_dev_cert?: ApplePushCertificate;
   apple_push_prod_cert?: ApplePushCertificate;
+  system_info?: SystemInfo;
   updated_at?: string;
+};
+
+export type SystemInfo = {
+  git_tag_version?: string;
+  os?: string;
+  cpu_arch?: string;
+  partition_path?: string;
+  partition_capacity?: string;
 };
 
 export type ApplePushCertificate = {
@@ -91,6 +100,18 @@ export type PasskeyBeginResponse = ErrorResponse & {
       type: string;
     }>;
   };
+};
+
+export type PasskeyCredential = {
+  credential_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PasskeyListResponse = ErrorResponse & {
+  credentials?: PasskeyCredential[];
+  count?: number;
+  has_passkeys?: boolean;
 };
 
 export type LLMConfigPayload = {

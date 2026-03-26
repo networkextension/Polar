@@ -154,7 +154,112 @@
 
 说明：
 
+- 已登录用户可在个人中心“账户安全”里查看已绑定 Passkey 数量、列表并删除
 - Passkey 登录完成接口与普通登录一样，也支持通过请求头登记设备类型与 `push token`
+
+### 发起 Passkey 绑定
+
+**POST** `/api/passkey/register/begin`
+
+权限要求：已登录用户
+
+成功响应：
+```json
+{
+  "session_id": "passkey_register_xxx",
+  "publicKey": {
+    "challenge": "xxx",
+    "rp": {
+      "id": "localhost",
+      "name": "Gin Auth Demo"
+    },
+    "user": {
+      "id": "xxx",
+      "name": "john@example.com",
+      "displayName": "johndoe"
+    },
+    "excludeCredentials": []
+  }
+}
+```
+
+### 完成 Passkey 绑定
+
+**POST** `/api/passkey/register/finish`
+
+权限要求：已登录用户
+
+请求头：
+
+- `X-Passkey-Session`：必填，来自 begin 接口返回的 `session_id`
+
+请求体：
+
+- WebAuthn / Passkey 标准注册响应对象，字段较长，此处省略
+
+成功响应：
+```json
+{
+  "message": "Passkey 绑定成功",
+  "count": 2,
+  "has_passkeys": true,
+  "credentials": [
+    {
+      "credential_id": "credential_abc123",
+      "created_at": "2026-03-26T20:15:00+08:00",
+      "updated_at": "2026-03-26T20:15:00+08:00"
+    }
+  ]
+}
+```
+
+### 获取已绑定 Passkey 列表
+
+**GET** `/api/passkeys`
+
+权限要求：已登录用户
+
+成功响应：
+```json
+{
+  "count": 2,
+  "has_passkeys": true,
+  "credentials": [
+    {
+      "credential_id": "credential_abc123",
+      "created_at": "2026-03-26T20:15:00+08:00",
+      "updated_at": "2026-03-26T20:15:00+08:00"
+    },
+    {
+      "credential_id": "credential_def456",
+      "created_at": "2026-03-20T09:20:00+08:00",
+      "updated_at": "2026-03-20T09:20:00+08:00"
+    }
+  ]
+}
+```
+
+### 删除已绑定 Passkey
+
+**DELETE** `/api/passkeys/:credentialId`
+
+权限要求：已登录用户，且该 Passkey 属于当前用户
+
+成功响应：
+```json
+{
+  "message": "Passkey 已删除",
+  "count": 1,
+  "has_passkeys": true,
+  "credentials": [
+    {
+      "credential_id": "credential_def456",
+      "created_at": "2026-03-20T09:20:00+08:00",
+      "updated_at": "2026-03-20T09:20:00+08:00"
+    }
+  ]
+}
+```
 
 ### 发起 Passkey 登录
 
@@ -1487,6 +1592,45 @@ curl -X POST http://localhost:3000/api/posts \
 }
 ```
 
+成功响应：
+```json
+{
+  "message": "话题标题已更新",
+  "thread": {
+    "id": 22,
+    "chat_thread_id": 12,
+    "owner_user_id": "u_018",
+    "bot_user_id": "bot_translate_01",
+    "title": "报价整理",
+    "created_at": "2026-03-25T09:30:00+08:00",
+    "updated_at": "2026-03-25T09:35:00+08:00",
+    "last_message_at": "2026-03-25T09:34:00+08:00"
+  },
+  "threads": []
+}
+```
+
+### 删除 Bot 话题
+
+**DELETE** `/api/chats/:id/llm-threads/:threadId`
+
+权限要求：会话参与者且为该话题拥有者
+
+说明：
+
+- 删除后，该话题本身会被移除
+- 该话题下历史消息不会删除，但其 `llm_thread_id` 会被置空
+
+成功响应：
+```json
+{
+  "message": "话题已删除",
+  "thread": null,
+  "active_thread": null,
+  "threads": []
+}
+```
+
 ### 切换 Bot 话题模型配置
 
 **PUT** `/api/chats/:id/llm-threads/:threadId/config`
@@ -1523,24 +1667,6 @@ curl -X POST http://localhost:3000/api/posts \
     "title": "报价整理",
     "created_at": "2026-03-25T09:30:00+08:00",
     "updated_at": "2026-03-25T09:40:00+08:00",
-    "last_message_at": "2026-03-25T09:34:00+08:00"
-  },
-  "threads": []
-}
-```
-
-成功响应：
-```json
-{
-  "message": "话题标题已更新",
-  "thread": {
-    "id": 22,
-    "chat_thread_id": 12,
-    "owner_user_id": "u_018",
-    "bot_user_id": "bot_translate_01",
-    "title": "报价整理",
-    "created_at": "2026-03-25T09:30:00+08:00",
-    "updated_at": "2026-03-25T09:35:00+08:00",
     "last_message_at": "2026-03-25T09:34:00+08:00"
   },
   "threads": []
