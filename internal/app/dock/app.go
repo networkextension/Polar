@@ -293,6 +293,7 @@ func (s *Server) registerRoutes() {
 		api.GET("/chats/:id/llm-threads", s.AuthMiddleware(), s.handleChatLLMThreads)
 		api.POST("/chats/:id/llm-threads", s.AuthMiddleware(), s.handleChatLLMThreadCreate)
 		api.PUT("/chats/:id/llm-threads/:threadId", s.AuthMiddleware(), s.handleChatLLMThreadUpdate)
+		api.DELETE("/chats/:id/llm-threads/:threadId", s.AuthMiddleware(), s.handleChatLLMThreadDelete)
 		api.PUT("/chats/:id/llm-threads/:threadId/config", s.AuthMiddleware(), s.handleChatLLMThreadConfigUpdate)
 		api.GET("/chats/:id/messages", s.AuthMiddleware(), s.handleChatMessages)
 		api.POST("/chats/:id/messages", s.AuthMiddleware(), s.handleChatSend)

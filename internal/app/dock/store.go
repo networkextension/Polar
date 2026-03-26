@@ -3248,6 +3248,24 @@ func (s *Server) updateLLMThreadTitle(chatThreadID int64, ownerUserID string, ll
 	return s.getLLMThread(chatThreadID, ownerUserID, updatedID)
 }
 
+func (s *Server) deleteLLMThread(chatThreadID int64, ownerUserID string, llmThreadID int64) (bool, error) {
+	result, err := s.db.Exec(
+		`DELETE FROM llm_threads
+		  WHERE id = $1 AND chat_thread_id = $2 AND owner_user_id = $3`,
+		llmThreadID,
+		chatThreadID,
+		ownerUserID,
+	)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
 func (s *Server) updateLLMThreadConfig(chatThreadID int64, ownerUserID string, llmThreadID, llmConfigID int64, now time.Time) (*LLMThread, error) {
 	var configName, configModel string
 	if err := s.db.QueryRow(
