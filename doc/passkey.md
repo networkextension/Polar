@@ -23,6 +23,11 @@
 - `POST /api/passkey/register/finish`（需要已登录）
   - Header: `X-Passkey-Session: <session_id>`
   - Body: 浏览器 `navigator.credentials.create()` 的结果
+  - 返回当前账户的 Passkey 列表、数量与是否已绑定 Passkey
+- `GET /api/passkeys`（需要已登录）
+  - 返回当前账户已绑定的 Passkey 列表与数量
+- `DELETE /api/passkeys/:credentialId`（需要已登录）
+  - 删除当前账户名下的某个 Passkey
 
 ### Passkey 登录
 - `POST /api/passkey/login/begin`（访客）
@@ -37,6 +42,13 @@
 2. `register/begin` 返回 `publicKey`
 3. 浏览器 `navigator.credentials.create({ publicKey })`
 4. `register/finish` 校验并存储凭据
+5. 个人中心“账户安全”即时刷新为“已绑定 N 个 Passkey”
+
+### 已绑定列表与删除
+1. 个人中心加载时调用 `GET /api/passkeys`
+2. 前端展示已绑定状态、数量、创建时间和更新时间
+3. 用户点击“删除”后调用 `DELETE /api/passkeys/:credentialId`
+4. 删除成功后前端使用最新列表重新渲染
 
 ### 登录
 1. 输入邮箱
@@ -136,7 +148,57 @@ curl -i http://localhost:8080/api/passkey/register/finish \
 
 响应（示例）：
 ```json
-{ "message": "Passkey 绑定成功" }
+{
+  "message": "Passkey 绑定成功",
+  "count": 1,
+  "has_passkeys": true,
+  "credentials": [
+    {
+      "credential_id": "credential_abc123",
+      "created_at": "2026-03-26T20:15:00+08:00",
+      "updated_at": "2026-03-26T20:15:00+08:00"
+    }
+  ]
+}
+```
+
+### 查询已绑定 Passkey
+请求：
+```bash
+curl -i http://localhost:8080/api/passkeys \
+  -H "Cookie: session_id=YOUR_SESSION_ID"
+```
+
+响应（示例）：
+```json
+{
+  "count": 2,
+  "has_passkeys": true,
+  "credentials": [
+    {
+      "credential_id": "credential_abc123",
+      "created_at": "2026-03-26T20:15:00+08:00",
+      "updated_at": "2026-03-26T20:15:00+08:00"
+    }
+  ]
+}
+```
+
+### 删除已绑定 Passkey
+请求：
+```bash
+curl -i -X DELETE http://localhost:8080/api/passkeys/credential_abc123 \
+  -H "Cookie: session_id=YOUR_SESSION_ID"
+```
+
+响应（示例）：
+```json
+{
+  "message": "Passkey 已删除",
+  "count": 1,
+  "has_passkeys": true,
+  "credentials": []
+}
 ```
 
 ### Passkey 登录

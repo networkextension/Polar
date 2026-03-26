@@ -128,3 +128,11 @@ export async function finishPasskeyRegistration(sessionId, payload) {
         body: payload,
     });
 }
+export async function fetchPasskeys() {
+    return requestJson("/api/passkeys");
+}
+export async function removePasskey(credentialId) {
+    return requestJson(`/api/passkeys/${encodeURIComponent(credentialId)}`, {
+        method: "DELETE",
+    });
+}

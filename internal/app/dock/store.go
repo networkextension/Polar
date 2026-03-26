@@ -235,6 +235,12 @@ type LLMThread struct {
 	LastMessageAt *time.Time `json:"last_message_at,omitempty"`
 }
 
+type WebAuthnCredentialSummary struct {
+	CredentialID string    `json:"credential_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 type TaskPost struct {
 	PostID                int64      `json:"post_id"`
 	Location              string     `json:"location,omitempty"`
@@ -1319,6 +1325,33 @@ func (s *Server) listWebAuthnCredentials(userID string) ([]webauthn.Credential, 
 	return creds, nil
 }
 
+func (s *Server) listWebAuthnCredentialSummaries(userID string) ([]WebAuthnCredentialSummary, error) {
+	rows, err := s.db.Query(
+		`SELECT credential_id, created_at, updated_at
+		   FROM webauthn_credentials
+		  WHERE user_id = $1
+		  ORDER BY updated_at DESC, created_at DESC, credential_id DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]WebAuthnCredentialSummary, 0)
+	for rows.Next() {
+		var item WebAuthnCredentialSummary
+		if err := rows.Scan(&item.CredentialID, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func (s *Server) upsertWebAuthnCredential(userID string, credential *webauthn.Credential) error {
 	if credential == nil {
 		return errors.New("credential is nil")
@@ -1338,6 +1371,23 @@ func (s *Server) upsertWebAuthnCredential(userID string, credential *webauthn.Cr
 		payload,
 	)
 	return err
+}
+
+func (s *Server) deleteWebAuthnCredential(userID, credentialID string) (bool, error) {
+	result, err := s.db.Exec(
+		`DELETE FROM webauthn_credentials
+		  WHERE credential_id = $1 AND user_id = $2`,
+		credentialID,
+		userID,
+	)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
 }
 
 func (s *Server) updateUserIcon(userID, iconURL string) error {

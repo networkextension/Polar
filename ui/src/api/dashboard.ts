@@ -10,6 +10,7 @@ import type {
   LLMConfigPayload,
   LoginHistoryResponse,
   PasskeyBeginResponse,
+  PasskeyListResponse,
   SiteSettings,
   SiteSettingsResponse,
   TagListResponse,
@@ -170,11 +171,21 @@ export async function finishPasskeyRegistration(
   sessionId: string,
   payload: Record<string, unknown> | unknown[] | null
 ) {
-  return requestJson<ErrorResponse>("/api/passkey/register/finish", {
+  return requestJson<PasskeyListResponse>("/api/passkey/register/finish", {
     method: "POST",
     headers: {
       "X-Passkey-Session": sessionId,
     },
     body: payload,
+  });
+}
+
+export async function fetchPasskeys() {
+  return requestJson<PasskeyListResponse>("/api/passkeys");
+}
+
+export async function removePasskey(credentialId: string) {
+  return requestJson<PasskeyListResponse>(`/api/passkeys/${encodeURIComponent(credentialId)}`, {
+    method: "DELETE",
   });
 }

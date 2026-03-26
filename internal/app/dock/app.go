@@ -238,6 +238,8 @@ func (s *Server) registerRoutes() {
 		api.POST("/logout", s.handleLogout)
 		api.POST("/passkey/register/begin", s.AuthMiddleware(), s.handlePasskeyRegisterBegin)
 		api.POST("/passkey/register/finish", s.AuthMiddleware(), s.handlePasskeyRegisterFinish)
+		api.GET("/passkeys", s.AuthMiddleware(), s.handlePasskeyList)
+		api.DELETE("/passkeys/:credentialId", s.AuthMiddleware(), s.handlePasskeyDelete)
 		api.POST("/passkey/login/begin", s.GuestMiddleware(), s.handlePasskeyLoginBegin)
 		api.POST("/passkey/login/finish", s.GuestMiddleware(), s.handlePasskeyLoginFinish)
 		api.POST("/user/icon", s.AuthMiddleware(), s.handleUserIconUpload)

@@ -102,6 +102,18 @@ export type PasskeyBeginResponse = ErrorResponse & {
   };
 };
 
+export type PasskeyCredential = {
+  credential_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PasskeyListResponse = ErrorResponse & {
+  credentials?: PasskeyCredential[];
+  count?: number;
+  has_passkeys?: boolean;
+};
+
 export type LLMConfigPayload = {
   name: string;
   base_url: string;

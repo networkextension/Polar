@@ -1,4 +1,4 @@
-import { createBotUser, createLLMConfig, beginPasskeyRegistration, createTag, deleteApplePushCertificate, deleteEntry, fetchAvailableLLMConfigs, fetchBotUsers, fetchEntries, fetchEntry, fetchLLMConfigs, fetchLoginHistory, fetchSiteSettings, fetchTags, finishPasskeyRegistration, removeBotUser, removeLLMConfig, removeTag, testLLMConfig, updateBotUser, updateLLMConfig, updateSiteSettings, updateTag, uploadApplePushCertificate, uploadSiteIcon, uploadUserIcon, } from "./api/dashboard.js";
+import { createBotUser, createLLMConfig, beginPasskeyRegistration, createTag, deleteApplePushCertificate, deleteEntry, fetchAvailableLLMConfigs, fetchBotUsers, fetchEntries, fetchEntry, fetchLLMConfigs, fetchLoginHistory, fetchPasskeys, fetchSiteSettings, fetchTags, finishPasskeyRegistration, removePasskey, removeBotUser, removeLLMConfig, removeTag, testLLMConfig, updateBotUser, updateLLMConfig, updateSiteSettings, updateTag, uploadApplePushCertificate, uploadSiteIcon, uploadUserIcon, } from "./api/dashboard.js";
 import { fetchCurrentUser, logout } from "./api/session.js";
 import { formatDeviceType } from "./lib/client.js";
 import { makeDefaultAvatar } from "./lib/avatar.js";
@@ -23,6 +23,7 @@ const loginHistoryList = byId("loginHistoryList");
 const themeToggleBtn = byId("themeToggleBtn");
 const passkeyRegisterBtn = byId("passkeyRegisterBtn");
 const passkeyStatus = byId("passkeyStatus");
+const passkeyList = byId("passkeyList");
 const userIcon = byId("userIcon");
 const iconFile = byId("iconFile");
 const iconEditor = byId("iconEditor");
@@ -212,6 +213,69 @@ function formatLoginMethod(method) {
     }
     return "密码";
 }
+function formatPasskeyLabel(credentialId) {
+    if (!credentialId) {
+        return "Passkey";
+    }
+    if (credentialId.length <= 12) {
+        return credentialId;
+    }
+    return `${credentialId.slice(0, 6)}...${credentialId.slice(-6)}`;
+}
+function renderPasskeys(credentials = []) {
+    const count = credentials.length;
+    if (!count) {
+        setStatusMessage(passkeyStatus, "未绑定 Passkey。");
+        passkeyRegisterBtn.textContent = "绑定 Passkey";
+        passkeyList.innerHTML = "<li>还没有绑定任何 Passkey</li>";
+        return;
+    }
+    setStatusMessage(passkeyStatus, `已绑定 ${count} 个 Passkey。`, "success");
+    passkeyRegisterBtn.textContent = "继续绑定";
+    passkeyList.innerHTML = credentials
+        .map((item) => {
+        const createdAt = new Date(item.created_at).toLocaleString();
+        const updatedAt = new Date(item.updated_at).toLocaleString();
+        return `
+        <li>
+          <div class="meta-title">已绑定 · ${formatPasskeyLabel(item.credential_id)}</div>
+          <div class="meta-subtitle">创建时间：${createdAt}</div>
+          <div class="meta-subtitle">最近更新时间：${updatedAt}</div>
+          <div class="meta-time">
+            <button class="btn-inline btn-secondary" type="button" data-passkey-delete="${item.credential_id}">删除</button>
+          </div>
+        </li>
+      `;
+    })
+        .join("");
+    passkeyList.querySelectorAll("[data-passkey-delete]").forEach((button) => {
+        button.addEventListener("click", async () => {
+            const credentialId = button.dataset.passkeyDelete || "";
+            if (!credentialId) {
+                return;
+            }
+            if (!window.confirm("确认删除这个 Passkey 吗？删除后将不能再用它快速登录。")) {
+                return;
+            }
+            button.disabled = true;
+            setStatusMessage(passkeyStatus, "正在删除 Passkey...");
+            try {
+                const { response, data } = await removePasskey(credentialId);
+                if (!response.ok) {
+                    setStatusMessage(passkeyStatus, data.error || "删除失败", "error");
+                    button.disabled = false;
+                    return;
+                }
+                renderPasskeys(data.credentials || []);
+                setStatusMessage(passkeyStatus, data.message || "Passkey 已删除", "success");
+            }
+            catch {
+                setStatusMessage(passkeyStatus, "网络错误，请重试", "error");
+                button.disabled = false;
+            }
+        });
+    });
+}
 function defaultSiteIcon(name) {
     return makeDefaultAvatar(name || "站", 160);
 }
@@ -375,6 +439,15 @@ async function loadLoginHistory() {
       `;
     })
         .join("");
+}
+async function loadPasskeys() {
+    const { response, data } = await fetchPasskeys();
+    if (!response.ok) {
+        setStatusMessage(passkeyStatus, data.error || "无法加载 Passkey 状态", "error");
+        passkeyList.innerHTML = "<li>无法加载 Passkey 列表</li>";
+        return;
+    }
+    renderPasskeys(data.credentials || []);
 }
 async function loadProfile() {
     const { response, data } = await fetchCurrentUser();
@@ -1143,14 +1216,14 @@ themeToggleBtn.addEventListener("click", () => {
 });
 passkeyRegisterBtn.addEventListener("click", async () => {
     if (!window.PublicKeyCredential) {
-        passkeyStatus.textContent = "当前浏览器不支持 Passkey。";
+        setStatusMessage(passkeyStatus, "当前浏览器不支持 Passkey。", "error");
         return;
     }
-    passkeyStatus.textContent = "正在启动 Passkey...";
+    setStatusMessage(passkeyStatus, "正在启动 Passkey...");
     try {
         const { response: beginResponse, data: beginResult } = await beginPasskeyRegistration();
         if (!beginResponse.ok) {
-            passkeyStatus.textContent = beginResult.error || "无法发起 Passkey 绑定";
+            setStatusMessage(passkeyStatus, beginResult.error || "无法发起 Passkey 绑定", "error");
             return;
         }
         const publicKey = beginResult.publicKey;
@@ -1167,12 +1240,15 @@ passkeyRegisterBtn.addEventListener("click", async () => {
         });
         const payload = credentialToJSON(credential);
         const { response: finishResponse, data: finishResult } = await finishPasskeyRegistration(beginResult.session_id || "", payload);
-        passkeyStatus.textContent = finishResponse.ok
-            ? "Passkey 绑定成功！"
-            : finishResult.error || "Passkey 绑定失败";
+        if (!finishResponse.ok) {
+            setStatusMessage(passkeyStatus, finishResult.error || "Passkey 绑定失败", "error");
+            return;
+        }
+        renderPasskeys(finishResult.credentials || []);
+        setStatusMessage(passkeyStatus, finishResult.message || "Passkey 绑定成功！", "success");
     }
     catch {
-        passkeyStatus.textContent = "网络错误，请重试";
+        setStatusMessage(passkeyStatus, "网络错误，请重试", "error");
     }
 });
 const initialTheme = initStoredTheme();
@@ -1182,5 +1258,5 @@ switchSettingsSection(activeSettingsSection);
 void (async () => {
     await hydrateSiteBrand();
     await loadProfile();
-    await Promise.all([loadEntries(true), loadLoginHistory(), loadSiteAdminData()]);
+    await Promise.all([loadEntries(true), loadLoginHistory(), loadPasskeys(), loadSiteAdminData()]);
 })();
