@@ -2,6 +2,7 @@ import { byId } from "./lib/dom.js";
 import { renderMarkdown } from "./lib/marked.js";
 import { hydrateSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme } from "./lib/theme.js";
+import { t } from "./lib/i18n.js";
 const API_BASE = "";
 const alertBox = byId("alert");
 const titleInput = byId("titleInput");
@@ -31,22 +32,22 @@ function getPublicUrl() {
 function updatePublicHint() {
     if (!canEdit) {
         publicHint.textContent = publicToggle.checked
-            ? `当前是公开只读文档：${getPublicUrl()}`
-            : "当前文档为只读，只有作者可以编辑。";
+            ? t("editor.publicReadOnly", { url: getPublicUrl() })
+            : t("editor.readOnly");
         return;
     }
     if (!publicToggle.checked) {
-        publicHint.textContent = "默认仅自己可见。";
+        publicHint.textContent = t("editor.publicByDefault");
         return;
     }
     publicHint.textContent = entryId
-        ? `其他用户可通过 ${getPublicUrl()} 查看此文档。`
-        : "保存后会生成公开访问链接，其他用户可查看但不能编辑。";
+        ? t("editor.publicUrl", { url: getPublicUrl() })
+        : t("editor.publicAfterSave");
 }
 function renderPreview() {
     const raw = contentInput.value.trim();
     if (!raw) {
-        preview.textContent = "暂无内容";
+        preview.textContent = t("editor.noContent");
         return;
     }
     preview.innerHTML = renderMarkdown(raw);
@@ -58,7 +59,7 @@ function applyReadonlyState(readonly) {
     publicToggle.disabled = readonly;
     saveBtn.hidden = readonly;
     saveBtn.disabled = readonly;
-    welcomeText.textContent = readonly ? "公开文档只读预览" : entryId ? "编辑记录" : "新建一条记录";
+    welcomeText.textContent = readonly ? t("editor.publicPreview") : entryId ? t("editor.editEntry") : t("editor.newEntry");
     updatePublicHint();
 }
 async function loadEntry() {
@@ -71,7 +72,7 @@ async function loadEntry() {
     });
     if (!res.ok) {
         alertBox.className = "alert error";
-        alertBox.textContent = "无法加载记录";
+        alertBox.textContent = t("editor.loadFailed");
         return;
     }
     const data = await res.json();
@@ -82,7 +83,7 @@ async function loadEntry() {
     applyReadonlyState(data.can_edit === false);
     if (!canEdit) {
         alertBox.className = "alert success";
-        alertBox.textContent = "你正在查看公开文档，只能阅读，不能编辑。";
+        alertBox.textContent = t("editor.readingPublic");
     }
 }
 contentInput.addEventListener("input", renderPreview);
@@ -94,7 +95,7 @@ saveBtn.addEventListener("click", async () => {
     const content = contentInput.value.trim();
     if (!title || !content) {
         alertBox.className = "alert error";
-        alertBox.textContent = "标题和内容不能为空";
+        alertBox.textContent = t("editor.titleContentRequired");
         return;
     }
     try {
@@ -113,18 +114,18 @@ saveBtn.addEventListener("click", async () => {
         const data = await res.json();
         if (!res.ok) {
             alertBox.className = "alert error";
-            alertBox.textContent = data.error || "保存失败";
+            alertBox.textContent = data.error || t("common.saveFailed");
             return;
         }
         alertBox.className = "alert success";
         alertBox.textContent = entryId
-            ? "更新成功"
-            : `保存成功（ID: ${data.id}）`;
+            ? t("editor.updateSuccess")
+            : t("editor.saveSuccess", { id: String(data.id) });
         window.location.href = "/dashboard.html";
     }
     catch {
         alertBox.className = "alert error";
-        alertBox.textContent = "网络错误，请稍后重试";
+        alertBox.textContent = t("common.networkError");
     }
 });
 backBtn.addEventListener("click", () => {

@@ -215,6 +215,24 @@ Default UI address:
   - relying party ID for Passkey
 - `PASSKEY_RP_NAME`
   - relying party display name
+- `APPLE_PUSH_TOPIC`
+  - default APNs topic, usually the iOS app bundle ID
+- `APPLE_PUSH_TOPIC_DEV`
+  - sandbox APNs topic, overrides `APPLE_PUSH_TOPIC`
+- `APPLE_PUSH_TOPIC_PROD`
+  - production APNs topic, overrides `APPLE_PUSH_TOPIC`
+- `APPLE_PUSH_KEY_ID`
+  - default APNs key ID for `.p8` auth
+- `APPLE_PUSH_KEY_ID_DEV`
+  - sandbox APNs key ID, overrides `APPLE_PUSH_KEY_ID`
+- `APPLE_PUSH_KEY_ID_PROD`
+  - production APNs key ID, overrides `APPLE_PUSH_KEY_ID`
+- `APPLE_PUSH_TEAM_ID`
+  - default Apple Developer Team ID for `.p8` auth
+- `APPLE_PUSH_TEAM_ID_DEV`
+  - sandbox APNs team ID, overrides `APPLE_PUSH_TEAM_ID`
+- `APPLE_PUSH_TEAM_ID_PROD`
+  - production APNs team ID, overrides `APPLE_PUSH_TEAM_ID`
 
 ## GeoLite Setup
 

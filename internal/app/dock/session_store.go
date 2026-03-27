@@ -15,7 +15,7 @@ func (s *Server) sessionKey(sessionID string) string {
 	return fmt.Sprintf("%s:session:%s", prefix, sessionID)
 }
 
-func (s *Server) createSession(user *User, deviceType, pushToken string) (string, error) {
+func (s *Server) createSession(user *User, deviceType, deviceID, pushToken string) (string, error) {
 	sessionID := generateSessionID()
 	session := &Session{
 		ID:         sessionID,
@@ -23,6 +23,7 @@ func (s *Server) createSession(user *User, deviceType, pushToken string) (string
 		Username:   user.Username,
 		Role:       user.Role,
 		DeviceType: normalizeDeviceType(deviceType),
+		DeviceID:   normalizeDeviceID(deviceID, deviceType),
 		PushToken:  sanitizePushToken(pushToken),
 		ExpiresAt:  time.Now().Add(SessionDuration),
 	}

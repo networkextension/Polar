@@ -49,10 +49,13 @@ func (s *Server) handleChatWS(c *gin.Context) {
 
 	client := &wsClient{
 		hub:        s.wsHub,
+		server:     s,
 		conn:       conn,
 		send:       make(chan []byte, 32),
+		connID:     generateSessionID()[:16],
 		userID:     session.UserID,
 		deviceType: normalizeDeviceType(session.DeviceType),
+		deviceID:   normalizeDeviceID(session.DeviceID, session.DeviceType),
 	}
 
 	s.wsHub.register <- client

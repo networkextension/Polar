@@ -1,9 +1,9 @@
 import { buildAssetUrl, resolveAvatar } from "./lib/avatar.js";
 import { byId, query } from "./lib/dom.js";
-import { t } from "./lib/i18n.js";
 import { hydrateSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme } from "./lib/theme.js";
 import { fetchTags } from "./api/dashboard.js";
+import { t } from "./lib/i18n.js";
 const API_BASE = "";
 const postWelcome = byId("postWelcome");
 const postDetail = byId("postDetail");
@@ -68,7 +68,7 @@ async function loadTagOptions() {
     }
     currentTags = data.tags || [];
     postTag.innerHTML = [
-        '<option value="">不选择板块</option>',
+        `<option value="">${t("post.noSection")}</option>`,
         ...currentTags.map((tag) => `<option value="${tag.id}">${tag.name}</option>`),
     ].join("");
 }
@@ -81,7 +81,7 @@ function ensureVideoModal() {
     modal.innerHTML = `
     <div class="video-modal-backdrop"></div>
     <div class="video-modal-content panel">
-      <button class="video-modal-close btn-inline btn-secondary" type="button">关闭</button>
+      <button class="video-modal-close btn-inline btn-secondary" type="button">${t("common.close")}</button>
       <video class="video-modal-player" controls autoplay preload="metadata"></video>
     </div>
   `;
@@ -130,12 +130,12 @@ function ensureImageModal() {
     <div class="image-modal-content">
       <div class="image-modal-toolbar">
         <div class="image-modal-counter">1 / 1</div>
-        <button class="image-modal-close btn-inline btn-secondary" type="button">关闭</button>
+        <button class="image-modal-close btn-inline btn-secondary" type="button">${t("common.close")}</button>
       </div>
       <div class="image-modal-stage">
-        <button class="image-modal-nav image-modal-prev btn-inline btn-secondary" type="button" aria-label="上一张">上一张</button>
+        <button class="image-modal-nav image-modal-prev btn-inline btn-secondary" type="button" aria-label="${t("post.prevImage")}">${t("post.prevImage")}</button>
         <img class="image-modal-viewer" alt="post image preview" />
-        <button class="image-modal-nav image-modal-next btn-inline btn-secondary" type="button" aria-label="下一张">下一张</button>
+        <button class="image-modal-nav image-modal-next btn-inline btn-secondary" type="button" aria-label="${t("post.nextImage")}">${t("post.nextImage")}</button>
       </div>
     </div>
   `;
@@ -270,25 +270,25 @@ async function loadProfile() {
     const data = await res.json();
     currentUserId = data.user_id;
     currentUserRole = data.role || "user";
-    postWelcome.textContent = `你好，${data.username}`;
+    postWelcome.textContent = t("post.welcome", { username: data.username });
 }
 async function loadReplies(postId) {
     const replyList = document.getElementById("replyList");
     if (!replyList) {
         return;
     }
-    replyList.innerHTML = "<div class='reply-empty'>加载中...</div>";
+    replyList.innerHTML = `<div class='reply-empty'>${t("post.loadingReplies")}</div>`;
     const res = await fetch(`${API_BASE}/api/posts/${postId}/replies?limit=50`, {
         credentials: "include",
     });
     if (!res.ok) {
-        replyList.innerHTML = "<div class='reply-empty'>无法加载回复</div>";
+        replyList.innerHTML = `<div class='reply-empty'>${t("post.repliesLoadFailed")}</div>`;
         return;
     }
     const data = await res.json();
     const replies = data.replies || [];
     if (replies.length === 0) {
-        replyList.innerHTML = "<div class='reply-empty'>暂无回复</div>";
+        replyList.innerHTML = `<div class='reply-empty'>${t("post.noReplies")}</div>`;
         return;
     }
     replyList.innerHTML = replies
@@ -332,7 +332,7 @@ function renderPost(post) {
         <div class="badge">${t("post.gigTaskBadge")}</div>
         <div class="task-meta-grid">
           <div><strong>${t("post.timeRange")}</strong>${formatTime(post.task.start_at)} - ${formatTime(post.task.end_at)}</div>
-          <div><strong>${t("post.workingHours")}</strong>${escapeHtml(post.task.working_hours)}</div>
+          <div><strong>${t("post.workingHoursLabel")}</strong>${escapeHtml(post.task.working_hours)}</div>
           <div><strong>${t("post.applyDeadline")}</strong>${formatTime(post.task.apply_deadline)}</div>
           <div><strong>${t("post.location")}</strong>${escapeHtml(post.task.location || t("post.noLocation"))}</div>
           <div><strong>${t("post.status")}</strong>${post.task.application_status === "open" ? t("post.statusOpen") : t("post.statusClosed")}</div>
@@ -572,7 +572,7 @@ function renderPost(post) {
         }
         Array.from(taskResultImages.files || []).forEach((file) => formData.append("images", file));
         Array.from(taskResultVideos.files || []).forEach((file) => formData.append("videos", file));
-        taskResultStatus.textContent = "正在提交任务成果...";
+        taskResultStatus.textContent = t("post.submittingResult");
         taskResultSubmitBtn.disabled = true;
         const res = await fetch(`${API_BASE}/api/tasks/${post.id}/results`, {
             method: "POST",
@@ -581,11 +581,11 @@ function renderPost(post) {
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-            taskResultStatus.textContent = data.error || "提交失败";
+            taskResultStatus.textContent = data.error || t("common.submitFailed");
             taskResultSubmitBtn.disabled = false;
             return;
         }
-        taskResultStatus.textContent = "任务成果已提交";
+        taskResultStatus.textContent = t("post.resultSubmitted");
         taskResultForm.reset();
         taskResultSubmitBtn.disabled = false;
         await loadTaskResults(post.id);
@@ -599,18 +599,18 @@ async function loadTaskResults(postId) {
     if (!container) {
         return;
     }
-    container.innerHTML = "<div class='reply-empty'>加载任务成果中...</div>";
+    container.innerHTML = `<div class='reply-empty'>${t("post.loadingResults")}</div>`;
     const res = await fetch(`${API_BASE}/api/tasks/${postId}/results`, {
         credentials: "include",
     });
     if (!res.ok) {
-        container.innerHTML = "<div class='reply-empty'>无法加载任务成果</div>";
+        container.innerHTML = `<div class='reply-empty'>${t("post.resultsLoadFailed")}</div>`;
         return;
     }
     const data = await res.json();
     const results = data.results || [];
     if (!results.length) {
-        container.innerHTML = "<div class='reply-empty'>暂未提交任务成果</div>";
+        container.innerHTML = `<div class='reply-empty'>${t("post.noResults")}</div>`;
         return;
     }
     container.innerHTML = results
@@ -626,7 +626,7 @@ async function loadTaskResults(postId) {
             return `
             <video controls preload="metadata" ${posterUrl ? `poster="${posterUrl}"` : ""}>
               <source src="${videoUrl}" />
-              你的浏览器不支持 video 标签
+              ${t("post.videoNotSupported")}
             </video>
           `;
         })
@@ -649,20 +649,20 @@ async function loadTaskResults(postId) {
 async function loadPost() {
     const postId = getPostId();
     if (!postId) {
-        postDetail.innerHTML = "<div class='post-empty'>无效的帖子</div>";
+        postDetail.innerHTML = `<div class='post-empty'>${t("post.invalidPost")}</div>`;
         return;
     }
     const res = await fetch(`${API_BASE}/api/posts/${postId}`, {
         credentials: "include",
     });
     if (!res.ok) {
-        postDetail.innerHTML = "<div class='post-empty'>无法加载帖子</div>";
+        postDetail.innerHTML = `<div class='post-empty'>${t("post.loadFailed")}</div>`;
         return;
     }
     const data = await res.json();
     const post = data.post || null;
     if (!post) {
-        postDetail.innerHTML = "<div class='post-empty'>未找到帖子</div>";
+        postDetail.innerHTML = `<div class='post-empty'>${t("post.notFound")}</div>`;
         return;
     }
     renderPost(post);
@@ -681,16 +681,16 @@ postForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const content = postContent.value.trim();
     if (!content) {
-        postFormStatus.textContent = "内容不能为空";
+        postFormStatus.textContent = t("post.contentRequired");
         return;
     }
     if (postType.value === "task") {
         if (!taskStartAt.value || !taskEndAt.value || !workingHours.value.trim() || !applyDeadline.value) {
-            postFormStatus.textContent = "请填写完整的任务信息";
+            postFormStatus.textContent = t("post.taskInfoRequired");
             return;
         }
     }
-    postFormStatus.textContent = "正在发布...";
+    postFormStatus.textContent = t("post.publishing");
     postSubmitBtn.disabled = true;
     const formData = new FormData();
     formData.append("post_type", postType.value);
@@ -719,15 +719,15 @@ postForm.addEventListener("submit", async (event) => {
         });
         const data = await res.json();
         if (!res.ok) {
-            postFormStatus.textContent = data.error || "发布失败";
+            postFormStatus.textContent = data.error || t("post.publishFailed");
             return;
         }
-        postFormStatus.textContent = "发布成功";
+        postFormStatus.textContent = t("post.publishSuccess");
         postForm.reset();
         window.location.href = `/post.html?id=${data.id}`;
     }
     catch {
-        postFormStatus.textContent = "发布失败，请重试";
+        postFormStatus.textContent = t("post.publishFailedRetry");
     }
     finally {
         postSubmitBtn.disabled = false;

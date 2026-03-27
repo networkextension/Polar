@@ -1,9 +1,9 @@
 import { buildAssetUrl, resolveAvatar } from "./lib/avatar.js";
 import { byId, query } from "./lib/dom.js";
-import { t } from "./lib/i18n.js";
 import { hydrateSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme } from "./lib/theme.js";
 import { fetchTags } from "./api/dashboard.js";
+import { t } from "./lib/i18n.js";
 const API_BASE = "";
 const postWelcome = byId("postWelcome");
 const postList = byId("postList");

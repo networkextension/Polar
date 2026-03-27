@@ -168,21 +168,25 @@ func (s *Server) handleChatMessages(c *gin.Context) {
 		return
 	}
 
-	if err := s.markChatRead(threadID, userIDStr, time.Now()); err != nil {
+	var lastReadMessageID *int64
+	if len(messages) > 0 {
+		lastReadMessageID = &messages[len(messages)-1].ID
+	}
+	readAt := time.Now()
+	if err := s.markChatRead(threadID, userIDStr, readAt, lastReadMessageID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
 	}
-	if s.wsHub != nil {
-		if userLow, userHigh, err := s.getChatParticipants(threadID); err == nil {
-			readAt := time.Now()
-			s.broadcastChatEvent([]string{userLow, userHigh}, chatEvent{
-				Type:   "read",
-				ChatID: threadID,
-				UserID: userIDStr,
-				ReadAt: &readAt,
-			})
-		}
+	if err := s.upsertChatMemberStateViewed(threadID, userIDStr, readAt); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
 	}
+	s.publishChatInternalEvent(chatInternalEvent{
+		Event:  chatEventRead,
+		ChatID: threadID,
+		UserID: userIDStr,
+		ReadAt: &readAt,
+	})
 
 	nextOffset := offset + len(messages)
 	c.JSON(http.StatusOK, gin.H{
@@ -620,16 +624,14 @@ func (s *Server) handleChatRetry(c *gin.Context) {
 	if deleted, deleteErr := s.markChatMessageFailedResolved(threadID, messageID, time.Now()); deleteErr != nil {
 		log.Printf("mark failed retry message resolved failed: %v", deleteErr)
 	} else if deleted {
-		if userLow, userHigh, participantsErr := s.getChatParticipants(threadID); participantsErr == nil {
-			deletedAt := time.Now()
-			s.broadcastChatEvent([]string{userLow, userHigh}, chatEvent{
-				Type:      "revoke",
-				ChatID:    threadID,
-				MessageID: messageID,
-				DeletedAt: &deletedAt,
-				UserID:    "retry",
-			})
-		}
+		deletedAt := time.Now()
+		s.publishChatInternalEvent(chatInternalEvent{
+			Event:     chatEventRevoked,
+			ChatID:    threadID,
+			MessageID: messageID,
+			UserID:    "retry",
+			DeletedAt: &deletedAt,
+		})
 	}
 	c.JSON(http.StatusAccepted, gin.H{
 		"message": "已重新提交上一条用户消息",
@@ -760,34 +762,12 @@ func (s *Server) sendSharedMarkdownMessage(threadID int64, llmThreadID *int64, s
 }
 
 func (s *Server) broadcastChatMessageByID(threadID, messageID int64, senderID, senderName string) (int64, error) {
-	if s.wsHub == nil {
-		return messageID, nil
-	}
-
-	if senderName == "" {
-		if user, lookupErr := s.getUserByID(senderID); lookupErr == nil && user != nil {
-			senderName = user.Username
-		}
-	}
-
-	userLow, userHigh, err := s.getChatParticipants(threadID)
-	if err != nil {
-		log.Printf("load chat participants failed: %v", err)
-		return messageID, nil
-	}
-	message, err := s.getChatMessageByID(messageID)
-	if err != nil {
-		log.Printf("load chat message failed: %v", err)
-		return messageID, nil
-	}
-	if message == nil {
-		return messageID, nil
-	}
-	message.SenderUsername = senderName
-	s.broadcastChatEvent([]string{userLow, userHigh}, chatEvent{
-		Type:    "message",
-		ChatID:  threadID,
-		Message: message,
+	_ = senderName
+	s.publishChatInternalEvent(chatInternalEvent{
+		Event:     chatEventMessageCreated,
+		ChatID:    threadID,
+		MessageID: messageID,
+		SenderID:  senderID,
 	})
 	return messageID, nil
 }
@@ -917,15 +897,14 @@ func (s *Server) handleChatDelete(c *gin.Context) {
 		return
 	}
 	if s.wsHub != nil {
-		if userLow, userHigh, err := s.getChatParticipants(threadID); err == nil {
-			deletedAt := time.Now()
-			s.broadcastChatEvent([]string{userLow, userHigh}, chatEvent{
-				Type:      "revoke",
-				ChatID:    threadID,
-				MessageID: messageID,
-				DeletedAt: &deletedAt,
-			})
-		}
+		deletedAt := time.Now()
+		s.publishChatInternalEvent(chatInternalEvent{
+			Event:     chatEventRevoked,
+			ChatID:    threadID,
+			MessageID: messageID,
+			UserID:    userIDStr,
+			DeletedAt: &deletedAt,
+		})
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "已撤回"})

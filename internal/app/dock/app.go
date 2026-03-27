@@ -21,25 +21,39 @@ import (
 )
 
 type Server struct {
-	db              *sql.DB
-	redis           *redis.Client
-	router          *gin.Engine
-	addr            string
-	redisPrefix     string
-	markdownDir     string
-	uploadDir       string
-	geoLiteDBPath   string
-	geoIPReader     *geoip2.Reader
-	webAuthn        *webauthn.WebAuthn
-	passkeyAuto     bool
-	passkeyRPID     string
-	passkeyOrigin   string
-	passkeyRPName   string
-	passkeySessions map[string]passkeySession
-	passkeyMu       sync.Mutex
-	wsHub           *wsHub
-	workDir         string
-	aiAgent         *aiAgent
+	db                  *sql.DB
+	redis               *redis.Client
+	router              *gin.Engine
+	addr                string
+	redisPrefix         string
+	markdownDir         string
+	uploadDir           string
+	geoLiteDBPath       string
+	geoIPReader         *geoip2.Reader
+	webAuthn            *webauthn.WebAuthn
+	passkeyAuto         bool
+	passkeyRPID         string
+	passkeyOrigin       string
+	passkeyRPName       string
+	passkeySessions     map[string]passkeySession
+	passkeyMu           sync.Mutex
+	wsHub               *wsHub
+	workDir             string
+	aiAgent             *aiAgent
+	backgroundCtx       context.Context
+	backgroundStop      context.CancelFunc
+	applePushTopic      string
+	applePushTopicDev   string
+	applePushTopicProd  string
+	applePushKeyID      string
+	applePushKeyIDDev   string
+	applePushKeyIDProd  string
+	applePushTeamID     string
+	applePushTeamIDDev  string
+	applePushTeamIDProd string
+	apnsMu              sync.Mutex
+	apnsClients         map[string]*http.Client
+	apnsTokens          map[string]cachedAPNSToken
 }
 
 func NewServer(cfg Config) (*Server, error) {
@@ -49,18 +63,30 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 
 	server := &Server{
-		db:            db,
-		addr:          cfg.Addr,
-		redisPrefix:   cfg.RedisPrefix,
-		markdownDir:   cfg.MarkdownDir,
-		uploadDir:     cfg.UploadDir,
-		geoLiteDBPath: cfg.GeoLiteDBPath,
+		db:                  db,
+		addr:                cfg.Addr,
+		redisPrefix:         cfg.RedisPrefix,
+		markdownDir:         cfg.MarkdownDir,
+		uploadDir:           cfg.UploadDir,
+		geoLiteDBPath:       cfg.GeoLiteDBPath,
+		applePushTopic:      cfg.ApplePushTopic,
+		applePushTopicDev:   cfg.ApplePushTopicDev,
+		applePushTopicProd:  cfg.ApplePushTopicProd,
+		applePushKeyID:      cfg.ApplePushKeyID,
+		applePushKeyIDDev:   cfg.ApplePushKeyIDDev,
+		applePushKeyIDProd:  cfg.ApplePushKeyIDProd,
+		applePushTeamID:     cfg.ApplePushTeamID,
+		applePushTeamIDDev:  cfg.ApplePushTeamIDDev,
+		applePushTeamIDProd: cfg.ApplePushTeamIDProd,
+		apnsClients:         make(map[string]*http.Client),
+		apnsTokens:          make(map[string]cachedAPNSToken),
 		redis: redis.NewClient(&redis.Options{
 			Addr:     cfg.RedisAddr,
 			Password: cfg.RedisPassword,
 			DB:       cfg.RedisDB,
 		}),
 	}
+	server.backgroundCtx, server.backgroundStop = context.WithCancel(context.Background())
 
 	workDir, err := os.Getwd()
 	if err == nil {
@@ -115,7 +141,11 @@ func NewServer(cfg Config) (*Server, error) {
 	server.passkeySessions = make(map[string]passkeySession)
 	server.wsHub = newWSHub()
 	server.wsHub.onPresenceChanged = server.handlePresenceChange
+	server.wsHub.onThreadViewChanged = server.handleThreadViewChange
+	server.wsHub.onConnectionTouched = server.handleConnectionTouch
 	go server.wsHub.run()
+	go server.runChatEventSubscriber(server.backgroundCtx)
+	go server.runPushDeliveryWorker(server.backgroundCtx)
 
 	if err := server.ensureSystemUser(); err != nil {
 		_ = db.Close()
@@ -131,6 +161,7 @@ func NewServer(cfg Config) (*Server, error) {
 	// Increase max upload size for video files (default gin limit is 32 MiB)
 	server.router.MaxMultipartMemory = 512 << 20 // 512 MiB
 	server.router.Use(corsMiddleware())
+	server.router.Use(server.LanguageMiddleware())
 	if server.uploadDir != "" {
 		server.router.Static("/uploads", server.uploadDir)
 	}
@@ -144,6 +175,9 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) Close() error {
+	if s.backgroundStop != nil {
+		s.backgroundStop()
+	}
 	if s.aiAgent != nil {
 		s.aiAgent.stop()
 	}
@@ -263,6 +297,8 @@ func (s *Server) registerRoutes() {
 		api.PUT("/bots/:id", s.AuthMiddleware(), s.handleBotUserUpdate)
 		api.DELETE("/bots/:id", s.AuthMiddleware(), s.handleBotUserDelete)
 		api.GET("/me", s.AuthMiddleware(), s.handleMe)
+		api.POST("/devices/push-token", s.AuthMiddleware(), s.handleDevicePushTokenUpdate)
+		api.DELETE("/devices/push-token", s.AuthMiddleware(), s.handleDevicePushTokenDelete)
 		api.GET("/login-history", s.AuthMiddleware(), s.handleLoginHistory)
 		api.POST("/markdown", s.AuthMiddleware(), s.handleMarkdownSubmit)
 		api.GET("/markdown", s.AuthMiddleware(), s.handleMarkdownList)

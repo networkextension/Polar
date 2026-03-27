@@ -5,6 +5,7 @@ import { resolveAvatar } from "./lib/avatar.js";
 import { byId } from "./lib/dom.js";
 import { hydrateSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme } from "./lib/theme.js";
+import { t } from "./lib/i18n.js";
 const profileWelcome = byId("profileWelcome");
 const profileCard = byId("profileCard");
 const profileBioPanel = byId("profileBioPanel");
@@ -41,10 +42,10 @@ function renderProfileCard(profile) {
     <div class="profile-hero">
       <img class="profile-hero-avatar" src="${avatar}" alt="${profile.username}" />
       <div class="profile-hero-body">
-        <div class="badge">${profile.is_me ? "我的资料" : "用户资料"}</div>
+        <div class="badge">${profile.is_me ? t("profile.myProfile") : t("profile.userProfile")}</div>
         <h2>${profile.username}</h2>
-        <div class="profile-meta-line">用户 ID：${profile.user_id}</div>
-        <div class="profile-meta-line">加入时间：${formatTime(profile.created_at)}</div>
+        <div class="profile-meta-line">${t("profile.userId", { id: profile.user_id })}</div>
+        <div class="profile-meta-line">${t("profile.joinedAt", { time: formatTime(profile.created_at) })}</div>
       </div>
     </div>
   `;
@@ -52,15 +53,15 @@ function renderProfileCard(profile) {
 function renderBioPanel(profile) {
     if (profile.is_me) {
         profileBioPanel.innerHTML = `
-      <div class="badge">自我介绍</div>
+      <div class="badge">${t("profile.bio")}</div>
       <form id="profileBioForm" class="task-result-form">
-        <label class="form-label" for="profileBioInput">个人介绍</label>
-        <textarea id="profileBioInput" class="input textarea" rows="5" maxlength="500" placeholder="介绍一下自己擅长什么、做过哪些任务、可服务的时间段...">${escapeHtml(profile.bio || "")}</textarea>
-        <label class="form-label" for="profileIconInput">头像</label>
+        <label class="form-label" for="profileBioInput">${t("profile.personalBio")}</label>
+        <textarea id="profileBioInput" class="input textarea" rows="5" maxlength="500" placeholder="${t("profile.bioPlaceholder")}">${escapeHtml(profile.bio || "")}</textarea>
+        <label class="form-label" for="profileIconInput">${t("profile.avatar")}</label>
         <input id="profileIconInput" class="input" type="file" accept="image/*" />
         <div id="profileBioStatus" class="status-text"></div>
         <div class="task-form-actions">
-          <button class="btn-inline btn-secondary" type="submit">保存资料</button>
+          <button class="btn-inline btn-secondary" type="submit">${t("profile.saveProfile")}</button>
         </div>
       </form>
     `;
@@ -70,10 +71,10 @@ function renderBioPanel(profile) {
         const status = byId("profileBioStatus");
         form.addEventListener("submit", async (event) => {
             event.preventDefault();
-            status.textContent = "正在保存...";
+            status.textContent = t("profile.saving");
             const { response, data } = await updateMyProfile(bioInput.value.trim());
             if (!response.ok) {
-                status.textContent = data.error || "保存失败";
+                status.textContent = data.error || t("profile.saveFailed");
                 return;
             }
             const iconFile = iconInput.files?.[0];
@@ -82,18 +83,18 @@ function renderBioPanel(profile) {
                 formData.append("icon", iconFile);
                 const { response: iconResponse, data: iconData } = await uploadUserIcon(formData);
                 if (!iconResponse.ok) {
-                    status.textContent = iconData.error || "头像上传失败";
+                    status.textContent = iconData.error || t("profile.avatarUploadFailed");
                     return;
                 }
             }
-            status.textContent = "资料已更新";
+            status.textContent = t("profile.profileUpdated");
             await loadProfile();
         });
         return;
     }
     profileBioPanel.innerHTML = `
-    <div class="badge">自我介绍</div>
-    <div class="profile-bio-copy">${profile.bio ? escapeHtml(profile.bio) : "这个用户暂时还没有填写自我介绍。"}</div>
+    <div class="badge">${t("profile.bio")}</div>
+    <div class="profile-bio-copy">${profile.bio ? escapeHtml(profile.bio) : t("profile.noBio")}</div>
   `;
 }
 function renderRecommendationPanel(profile) {
@@ -101,11 +102,11 @@ function renderRecommendationPanel(profile) {
     const formHtml = profile.can_recommend
         ? `
       <form id="recommendationForm" class="task-result-form">
-        <label class="form-label" for="recommendationInput">写 Recommendation</label>
-        <textarea id="recommendationInput" class="input textarea" rows="4" maxlength="1000" placeholder="写下你和 TA 合作过的感受、可靠性、执行力等..."></textarea>
+        <label class="form-label" for="recommendationInput">${t("profile.writeRecommendation")}</label>
+        <textarea id="recommendationInput" class="input textarea" rows="4" maxlength="1000" placeholder="${t("profile.recommendationPlaceholder")}"></textarea>
         <div id="recommendationStatus" class="status-text"></div>
         <div class="task-form-actions">
-          <button class="btn-inline btn-secondary" type="submit">提交 Recommendation</button>
+          <button class="btn-inline btn-secondary" type="submit">${t("profile.submitRecommendation")}</button>
         </div>
       </form>
     `
@@ -130,9 +131,9 @@ function renderRecommendationPanel(profile) {
           `;
         })
             .join("")
-        : "<div class='reply-empty'>还没有 Recommendation</div>";
+        : `<div class='reply-empty'>${t("profile.noRecommendations")}</div>`;
     profileRecommendationPanel.innerHTML = `
-    <div class="badge">Recommendation</div>
+    <div class="badge">${t("profile.recommendation")}</div>
     ${formHtml}
     <div class="task-result-list">${listHtml}</div>
   `;
@@ -146,16 +147,16 @@ function renderRecommendationPanel(profile) {
         event.preventDefault();
         const content = input.value.trim();
         if (!content) {
-            status.textContent = "请输入 Recommendation 内容";
+            status.textContent = t("profile.recommendationRequired");
             return;
         }
-        status.textContent = "正在提交...";
+        status.textContent = t("profile.submitting");
         const { response, data } = await upsertRecommendation(profile.user_id, content);
         if (!response.ok) {
-            status.textContent = data.error || "提交失败";
+            status.textContent = data.error || t("profile.submitFailed");
             return;
         }
-        status.textContent = "Recommendation 已保存";
+        status.textContent = t("profile.recommendationSaved");
         input.value = "";
         await loadProfile();
     });
@@ -165,13 +166,13 @@ async function loadProfile() {
     profileUserId = userId;
     const { response, data } = await fetchUserProfile(userId);
     if (!response.ok || !data.profile) {
-        profileWelcome.textContent = data.error || "无法加载用户资料";
+        profileWelcome.textContent = data.error || t("profile.loadFailed");
         return;
     }
     const profile = data.profile;
     profileWelcome.textContent = profile.is_me
-        ? "完善你的头像和自我介绍，让任务发布者更容易选择你。"
-        : `查看 ${profile.username} 的资料与 Recommendation。`;
+        ? t("profile.completeProfile")
+        : t("profile.viewingProfile", { username: profile.username });
     renderProfileCard(profile);
     renderBioPanel(profile);
     renderRecommendationPanel(profile);

@@ -31,8 +31,20 @@ func sanitizePushToken(value string) string {
 	return value
 }
 
-func (s *Server) parseLoginClientInfo(deviceTypeHeader, pushTokenHeader string) (string, string) {
-	return normalizeDeviceType(deviceTypeHeader), sanitizePushToken(pushTokenHeader)
+func normalizeDeviceID(value, deviceType string) string {
+	value = strings.TrimSpace(value)
+	if len(value) > 128 {
+		value = value[:128]
+	}
+	if value != "" {
+		return value
+	}
+	return "default:" + normalizeDeviceType(deviceType)
+}
+
+func (s *Server) parseClientInfo(deviceTypeHeader, pushTokenHeader, deviceIDHeader string) (string, string, string) {
+	deviceType := normalizeDeviceType(deviceTypeHeader)
+	return deviceType, sanitizePushToken(pushTokenHeader), normalizeDeviceID(deviceIDHeader, deviceType)
 }
 
 func (s *Server) syncUserPresence(userID string, now time.Time) error {
@@ -130,13 +142,13 @@ func (s *Server) broadcastPresenceUpdate(userID string) {
 	})
 }
 
-func (s *Server) handlePresenceChange(userID, deviceType string, online bool, hasDeviceConnection bool) {
+func (s *Server) handlePresenceChange(userID, deviceType, deviceID string, online bool, hasDeviceConnection bool) {
 	if userID == "" {
 		return
 	}
 
 	now := time.Now()
-	if err := s.updateUserDevicePresence(userID, deviceType, hasDeviceConnection, now); err != nil {
+	if err := s.updateUserDevicePresence(userID, deviceType, deviceID, hasDeviceConnection, now); err != nil {
 		log.Printf("update user device presence failed: %v", err)
 		return
 	}
@@ -145,6 +157,5 @@ func (s *Server) handlePresenceChange(userID, deviceType string, online bool, ha
 		return
 	}
 
-	_ = online
 	s.broadcastPresenceUpdate(userID)
 }

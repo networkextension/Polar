@@ -20,7 +20,7 @@ func (s *Server) AuthMiddleware() gin.HandlerFunc {
 		sessionID, err := c.Cookie(SessionCookieName)
 		if err != nil {
 			if isAPIRequest(c) {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录或会话已失效"})
+				jsonError(c, http.StatusUnauthorized, "auth.unauthorized")
 			} else {
 				c.Redirect(http.StatusFound, "/login")
 			}
@@ -32,7 +32,7 @@ func (s *Server) AuthMiddleware() gin.HandlerFunc {
 		if session == nil {
 			clearSessionCookie(c)
 			if isAPIRequest(c) {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录或会话已失效"})
+				jsonError(c, http.StatusUnauthorized, "auth.unauthorized")
 			} else {
 				c.Redirect(http.StatusFound, "/login")
 			}
@@ -56,7 +56,7 @@ func (s *Server) AdminMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		role, _ := c.Get("role")
 		if roleStr, ok := role.(string); !ok || roleStr != "admin" {
-			c.JSON(http.StatusForbidden, gin.H{"error": "权限不足"})
+			jsonError(c, http.StatusForbidden, "auth.forbidden")
 			c.Abort()
 			return
 		}
@@ -71,7 +71,7 @@ func (s *Server) GuestMiddleware() gin.HandlerFunc {
 			session := s.getSession(sessionID)
 			if session != nil {
 				if isAPIRequest(c) {
-					c.JSON(http.StatusConflict, gin.H{"error": "当前已登录"})
+					jsonError(c, http.StatusConflict, "auth.already_logged_in")
 				} else {
 					c.Redirect(http.StatusFound, "/dashboard")
 				}

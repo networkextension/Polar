@@ -172,12 +172,12 @@ func (s *Server) handleApplePushCertificateUpload(c *gin.Context) {
 
 	file, err := c.FormFile("certificate")
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择证书文件"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择 APNs Key / .p8 文件"})
 		return
 	}
 
 	if !isAllowedApplePushCertificate(file.Filename) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持 .p8、.p12、.pem、.cer、.crt、.key 证书文件"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "仅支持 .p8、.p12、.pem、.cer、.crt、.key 文件"})
 		return
 	}
 
@@ -218,7 +218,7 @@ func (s *Server) handleApplePushCertificateUpload(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":     "Apple Push 证书已上传",
+		"message":     "APNs Key / .p8 已上传",
 		"environment": environment,
 		"site":        s.hydrateSiteSettings(settings),
 	})
@@ -259,7 +259,7 @@ func (s *Server) handleApplePushCertificateDelete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":     "Apple Push 证书已删除",
+		"message":     "APNs Key / .p8 已删除",
 		"environment": environment,
 		"site":        s.hydrateSiteSettings(settings),
 	})

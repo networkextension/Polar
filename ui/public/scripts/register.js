@@ -1,6 +1,7 @@
 import { byId } from "./lib/dom.js";
 import { buildClientHeaders } from "./lib/client.js";
 import { hydrateSiteBrand } from "./lib/site.js";
+import { t } from "./lib/i18n.js";
 const API_BASE = "";
 const form = byId("registerForm");
 const alertBox = byId("alert");
@@ -24,18 +25,18 @@ form.addEventListener("submit", async (event) => {
         const data = await res.json();
         if (!res.ok) {
             alertBox.className = "alert error";
-            alertBox.textContent = data.error || "注册失败";
+            alertBox.textContent = data.error || t("register.failed");
             return;
         }
         alertBox.className = "alert success";
-        alertBox.textContent = "注册成功，正在跳转...";
+        alertBox.textContent = t("register.success");
         window.setTimeout(() => {
             window.location.href = "/dashboard.html";
         }, 600);
     }
     catch {
         alertBox.className = "alert error";
-        alertBox.textContent = "网络错误，请稍后重试";
+        alertBox.textContent = t("common.networkError");
     }
 });
 async function redirectIfLoggedIn() {

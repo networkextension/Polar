@@ -109,31 +109,31 @@ func (s *Server) handlePasskeyRegisterBegin(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	userIDStr, ok := userID.(string)
 	if !ok || userIDStr == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
 	user, err := s.getUserByID(userIDStr)
 	if err != nil || user == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
 	waUser, err := s.buildWebAuthnUser(user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
 	wa, err := s.webAuthnForRequest(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建 Passkey 失败"})
+		jsonError(c, http.StatusInternalServerError, "passkey.create_failed")
 		return
 	}
 
 	options, sessionData, err := wa.BeginRegistration(waUser)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建 Passkey 失败"})
+		jsonError(c, http.StatusInternalServerError, "passkey.create_failed")
 		return
 	}
 
@@ -147,53 +147,52 @@ func (s *Server) handlePasskeyRegisterBegin(c *gin.Context) {
 func (s *Server) handlePasskeyRegisterFinish(c *gin.Context) {
 	sessionID := c.GetHeader("X-Passkey-Session")
 	if sessionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少会话信息"})
+		jsonError(c, http.StatusBadRequest, "passkey.session_missing")
 		return
 	}
 
 	session, ok := s.consumePasskeySession(sessionID, "register")
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "会话已过期，请重试"})
+		jsonError(c, http.StatusBadRequest, "passkey.session_expired")
 		return
 	}
 
 	user, err := s.getUserByID(session.UserID)
 	if err != nil || user == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
 	waUser, err := s.buildWebAuthnUser(user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
 	wa, err := s.webAuthnForRequest(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Passkey 校验失败"})
+		jsonError(c, http.StatusInternalServerError, "passkey.verify_failed")
 		return
 	}
 
 	credential, err := wa.FinishRegistration(waUser, session.Data, c.Request)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Passkey 校验失败", "detail": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": tr(c, "passkey.verify_failed"), "detail": err.Error()})
 		return
 	}
 
 	if err := s.upsertWebAuthnCredential(user.ID, credential); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存 Passkey 失败"})
+		jsonError(c, http.StatusInternalServerError, "passkey.save_failed")
 		return
 	}
 
 	items, err := s.listWebAuthnCredentialSummaries(user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":      "Passkey 绑定成功",
+	jsonMessage(c, http.StatusOK, "passkey.bound_success", gin.H{
 		"credentials":  items,
 		"count":        len(items),
 		"has_passkeys": len(items) > 0,
@@ -204,13 +203,13 @@ func (s *Server) handlePasskeyList(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	userIDStr, ok := userID.(string)
 	if !ok || userIDStr == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
 	items, err := s.listWebAuthnCredentialSummaries(userIDStr)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
@@ -225,34 +224,33 @@ func (s *Server) handlePasskeyDelete(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	userIDStr, ok := userID.(string)
 	if !ok || userIDStr == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
 	credentialID := strings.TrimSpace(c.Param("credentialId"))
 	if credentialID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 Passkey"})
+		jsonError(c, http.StatusBadRequest, "passkey.invalid_credential")
 		return
 	}
 
 	deleted, err := s.deleteWebAuthnCredential(userIDStr, credentialID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除 Passkey 失败"})
+		jsonError(c, http.StatusInternalServerError, "passkey.delete_failed")
 		return
 	}
 	if !deleted {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Passkey 不存在"})
+		jsonError(c, http.StatusNotFound, "passkey.not_found")
 		return
 	}
 
 	items, err := s.listWebAuthnCredentialSummaries(userIDStr)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":      "Passkey 已删除",
+	jsonMessage(c, http.StatusOK, "passkey.deleted_success", gin.H{
 		"credentials":  items,
 		"count":        len(items),
 		"has_passkeys": len(items) > 0,
@@ -264,39 +262,39 @@ func (s *Server) handlePasskeyLoginBegin(c *gin.Context) {
 		Email string `json:"email" binding:"required,email"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
+		jsonError(c, http.StatusBadRequest, "common.invalid_input")
 		return
 	}
 
 	user, err := s.getUserByEmail(req.Email)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 	if user == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "用户不存在或未绑定 Passkey"})
+		jsonError(c, http.StatusBadRequest, "passkey.user_missing_or_unbound")
 		return
 	}
 
 	waUser, err := s.buildWebAuthnUser(user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 	if len(waUser.credentials) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "用户不存在或未绑定 Passkey"})
+		jsonError(c, http.StatusBadRequest, "passkey.user_missing_or_unbound")
 		return
 	}
 
 	wa, err := s.webAuthnForRequest(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建 Passkey 失败"})
+		jsonError(c, http.StatusInternalServerError, "passkey.create_failed")
 		return
 	}
 
 	options, sessionData, err := wa.BeginLogin(waUser)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建 Passkey 失败"})
+		jsonError(c, http.StatusInternalServerError, "passkey.create_failed")
 		return
 	}
 
@@ -310,66 +308,65 @@ func (s *Server) handlePasskeyLoginBegin(c *gin.Context) {
 func (s *Server) handlePasskeyLoginFinish(c *gin.Context) {
 	sessionID := c.GetHeader("X-Passkey-Session")
 	if sessionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少会话信息"})
+		jsonError(c, http.StatusBadRequest, "passkey.session_missing")
 		return
 	}
 
 	session, ok := s.consumePasskeySession(sessionID, "login")
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "会话已过期，请重试"})
+		jsonError(c, http.StatusBadRequest, "passkey.session_expired")
 		return
 	}
 
 	user, err := s.getUserByID(session.UserID)
 	if err != nil || user == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
 	waUser, err := s.buildWebAuthnUser(user)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
 	wa, err := s.webAuthnForRequest(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Passkey 验证失败"})
+		jsonError(c, http.StatusInternalServerError, "passkey.verify_failed")
 		return
 	}
 
 	credential, err := wa.FinishLogin(waUser, session.Data, c.Request)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Passkey 验证失败", "detail": err.Error()})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": tr(c, "passkey.verify_failed"), "detail": err.Error()})
 		return
 	}
 
 	if err := s.upsertWebAuthnCredential(user.ID, credential); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新 Passkey 失败"})
+		jsonError(c, http.StatusInternalServerError, "passkey.update_failed")
 		return
 	}
 
-	deviceType, pushToken := s.parseLoginClientInfo(c.GetHeader("X-Device-Type"), c.GetHeader("X-Push-Token"))
+	deviceType, pushToken, deviceID := s.parseClientInfo(c.GetHeader("X-Device-Type"), c.GetHeader("X-Push-Token"), c.GetHeader("X-Device-Id"))
 	now := time.Now()
-	if err := s.upsertUserDevice(user.ID, deviceType, pushToken, now); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+	if err := s.upsertUserDeviceWithID(user.ID, deviceType, deviceID, pushToken, now); err != nil {
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 	if err := s.syncUserPresence(user.ID, now); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
-	sessionIDValue, err := s.createSession(user, deviceType, pushToken)
+	sessionIDValue, err := s.createSession(user, deviceType, deviceID, pushToken)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 	c.SetCookie(SessionCookieName, sessionIDValue, int(SessionDuration.Seconds()), "/", "", false, true)
 	s.recordLoginEvent(c, user.ID, "passkey", deviceType)
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":  "登录成功",
+	jsonMessage(c, http.StatusOK, "auth.login_success", gin.H{
 		"user_id":  user.ID,
 		"username": user.Username,
 	})

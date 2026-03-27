@@ -17,27 +17,27 @@ func (s *Server) handleRegister(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
+		jsonError(c, http.StatusBadRequest, "common.invalid_input")
 		return
 	}
 
 	existingUser, err := s.getUserByEmail(req.Email)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 	if existingUser != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "该邮箱已被注册"})
+		jsonError(c, http.StatusConflict, "auth.email_registered")
 		return
 	}
 
 	hashedPassword, err := hashPassword(req.Password)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
-	deviceType, pushToken := s.parseLoginClientInfo(c.GetHeader("X-Device-Type"), c.GetHeader("X-Push-Token"))
+	deviceType, pushToken, deviceID := s.parseClientInfo(c.GetHeader("X-Device-Type"), c.GetHeader("X-Push-Token"), c.GetHeader("X-Device-Id"))
 	now := time.Now()
 
 	user := &User{
@@ -50,32 +50,31 @@ func (s *Server) handleRegister(c *gin.Context) {
 	}
 	if err := s.createUser(user); err != nil {
 		if err == errEmailExists {
-			c.JSON(http.StatusConflict, gin.H{"error": "该邮箱已被注册"})
+			jsonError(c, http.StatusConflict, "auth.email_registered")
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
-	if err := s.upsertUserDevice(user.ID, deviceType, pushToken, now); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+	if err := s.upsertUserDeviceWithID(user.ID, deviceType, deviceID, pushToken, now); err != nil {
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 	if err := s.syncUserPresence(user.ID, now); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
-	sessionID, err := s.createSession(user, deviceType, pushToken)
+	sessionID, err := s.createSession(user, deviceType, deviceID, pushToken)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 	c.SetCookie(SessionCookieName, sessionID, int(SessionDuration.Seconds()), "/", "", false, true)
 	s.recordLoginEvent(c, user.ID, "register", deviceType)
 
-	c.JSON(http.StatusCreated, gin.H{
-		"message":  "注册成功",
+	jsonMessage(c, http.StatusCreated, "auth.register_success", gin.H{
 		"user_id":  user.ID,
 		"username": user.Username,
 	})
@@ -88,41 +87,40 @@ func (s *Server) handleLogin(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
+		jsonError(c, http.StatusBadRequest, "common.invalid_input")
 		return
 	}
 
 	user, err := s.getUserByEmail(req.Email)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 	if user == nil || !checkPassword(req.Password, user.Password) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "邮箱或密码错误"})
+		jsonError(c, http.StatusUnauthorized, "auth.invalid_credentials")
 		return
 	}
 
-	deviceType, pushToken := s.parseLoginClientInfo(c.GetHeader("X-Device-Type"), c.GetHeader("X-Push-Token"))
+	deviceType, pushToken, deviceID := s.parseClientInfo(c.GetHeader("X-Device-Type"), c.GetHeader("X-Push-Token"), c.GetHeader("X-Device-Id"))
 	now := time.Now()
-	if err := s.upsertUserDevice(user.ID, deviceType, pushToken, now); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+	if err := s.upsertUserDeviceWithID(user.ID, deviceType, deviceID, pushToken, now); err != nil {
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 	if err := s.syncUserPresence(user.ID, now); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
-	sessionID, err := s.createSession(user, deviceType, pushToken)
+	sessionID, err := s.createSession(user, deviceType, deviceID, pushToken)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 	c.SetCookie(SessionCookieName, sessionID, int(SessionDuration.Seconds()), "/", "", false, true)
 	s.recordLoginEvent(c, user.ID, "password", deviceType)
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":  "登录成功",
+	jsonMessage(c, http.StatusOK, "auth.login_success", gin.H{
 		"user_id":  user.ID,
 		"username": user.Username,
 	})
@@ -144,7 +142,7 @@ func (s *Server) handleLogout(c *gin.Context) {
 		HttpOnly: true,
 		Expires:  time.Unix(0, 0),
 	})
-	c.JSON(http.StatusOK, gin.H{"message": "已成功退出登录"})
+	jsonMessage(c, http.StatusOK, "auth.logout_success", nil)
 }
 
 func (s *Server) handleMe(c *gin.Context) {
@@ -195,7 +193,7 @@ func (s *Server) handleLoginHistory(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	userIDStr, ok := userID.(string)
 	if !ok || userIDStr == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 
@@ -203,7 +201,7 @@ func (s *Server) handleLoginHistory(c *gin.Context) {
 	if limitStr := c.Query("limit"); limitStr != "" {
 		parsed, err := strconv.Atoi(limitStr)
 		if err != nil || parsed <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的输入数据"})
+			jsonError(c, http.StatusBadRequest, "common.invalid_input")
 			return
 		}
 		limit = parsed
@@ -211,7 +209,7 @@ func (s *Server) handleLoginHistory(c *gin.Context) {
 
 	records, err := s.listLoginRecords(userIDStr, limit)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		jsonError(c, http.StatusInternalServerError, "common.server_error")
 		return
 	}
 

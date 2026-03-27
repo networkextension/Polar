@@ -2,6 +2,7 @@ import { resolveAvatar } from "./lib/avatar.js";
 import { hydrateSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme } from "./lib/theme.js";
 import { byId } from "./lib/dom.js";
+import { t } from "./lib/i18n.js";
 const markdownList = byId("markdownList");
 const markdownLoadMoreBtn = byId("markdownLoadMoreBtn");
 let nextOffset = 0;
@@ -25,7 +26,7 @@ function createMarkdownCard(entry) {
       <div class="post-time">${formatTime(entry.uploaded_at)}</div>
     </div>
     <div class="markdown-card-title">${entry.title}</div>
-    <div class="markdown-card-meta">点击进入只读页面查看完整 Markdown</div>
+    <div class="markdown-card-meta">${t("markdowns.clickToView")}</div>
   `;
     return card;
 }
@@ -43,12 +44,12 @@ async function loadMarkdowns(reset = false) {
     });
     const data = await response.json();
     if (!response.ok) {
-        markdownList.innerHTML = "<div class='post-empty'>无法加载公开 Markdown</div>";
+        markdownList.innerHTML = `<div class='post-empty'>${t("markdowns.loadFailed")}</div>`;
         return;
     }
     const entries = data.entries || [];
     if (reset && entries.length === 0) {
-        markdownList.innerHTML = "<div class='post-empty'>暂无公开 Markdown</div>";
+        markdownList.innerHTML = `<div class='post-empty'>${t("markdowns.noPosts")}</div>`;
         hasMore = false;
         markdownLoadMoreBtn.style.display = "none";
         return;

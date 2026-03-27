@@ -44,8 +44,39 @@ type Session struct {
 	Username   string
 	Role       string
 	DeviceType string
+	DeviceID   string
 	PushToken  string
 	ExpiresAt  time.Time
+}
+
+type UserDevice struct {
+	ID           int64
+	UserID       string
+	DeviceType   string
+	DeviceID     string
+	PushToken    string
+	PushEnabled  bool
+	AppVersion   string
+	IsOnline     bool
+	LastLoginAt  time.Time
+	LastSeenAt   *time.Time
+	LastActiveAt *time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+type PushDelivery struct {
+	ID           int64
+	MessageID    int64
+	UserID       string
+	DeviceID     string
+	PushToken    string
+	Provider     string
+	Status       string
+	APNSID       string
+	ErrorMessage string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type MarkdownEntry struct {
@@ -186,6 +217,7 @@ type ChatThread struct {
 	UserHigh      string     `json:"user_high"`
 	CreatedAt     time.Time  `json:"created_at"`
 	LastMessage   string     `json:"last_message"`
+	LastMessageID *int64     `json:"last_message_id,omitempty"`
 	LastMessageAt *time.Time `json:"last_message_at,omitempty"`
 }
 
@@ -393,13 +425,63 @@ CREATE TABLE IF NOT EXISTS user_devices (
 	id BIGSERIAL PRIMARY KEY,
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	device_type TEXT NOT NULL DEFAULT 'browser',
+	device_id TEXT NOT NULL DEFAULT '',
 	push_token TEXT NOT NULL DEFAULT '',
+	push_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+	app_version TEXT NOT NULL DEFAULT '',
 	is_online BOOLEAN NOT NULL DEFAULT FALSE,
 	last_login_at TIMESTAMPTZ NOT NULL,
 	last_seen_at TIMESTAMPTZ,
+	last_active_at TIMESTAMPTZ,
 	created_at TIMESTAMPTZ NOT NULL,
 	updated_at TIMESTAMPTZ NOT NULL,
-	UNIQUE (user_id, device_type)
+	UNIQUE (user_id, device_type, device_id)
+);
+
+ALTER TABLE user_devices
+	ADD COLUMN IF NOT EXISTS device_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE user_devices
+	ADD COLUMN IF NOT EXISTS push_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE user_devices
+	ADD COLUMN IF NOT EXISTS app_version TEXT NOT NULL DEFAULT '';
+ALTER TABLE user_devices
+	ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ;
+UPDATE user_devices
+   SET device_id = CASE
+       WHEN COALESCE(device_id, '') <> '' THEN device_id
+       WHEN device_type = 'ios' THEN 'default:ios'
+       WHEN device_type = 'android' THEN 'default:android'
+       ELSE 'default:browser'
+   END
+ WHERE COALESCE(device_id, '') = '';
+ALTER TABLE user_devices
+	DROP CONSTRAINT IF EXISTS user_devices_user_id_device_type_key;
+
+CREATE TABLE IF NOT EXISTS push_deliveries (
+	id BIGSERIAL PRIMARY KEY,
+	message_id BIGINT NOT NULL,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	device_id TEXT NOT NULL DEFAULT '',
+	push_token TEXT NOT NULL DEFAULT '',
+	provider TEXT NOT NULL DEFAULT 'apns',
+	status TEXT NOT NULL,
+	apns_id TEXT NOT NULL DEFAULT '',
+	error_message TEXT NOT NULL DEFAULT '',
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS chat_member_state (
+	thread_id BIGINT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
+	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	mute_until TIMESTAMPTZ,
+	is_muted BOOLEAN NOT NULL DEFAULT FALSE,
+	last_opened_at TIMESTAMPTZ,
+	last_delivered_message_id BIGINT,
+	last_push_message_id BIGINT,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	PRIMARY KEY (thread_id, user_id)
 );
 
 CREATE TABLE IF NOT EXISTS tags (
@@ -584,8 +666,12 @@ CREATE TABLE IF NOT EXISTS chat_threads (
 	user_high TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	created_at TIMESTAMPTZ NOT NULL,
 	last_message TEXT NOT NULL DEFAULT '',
+	last_message_id BIGINT,
 	last_message_at TIMESTAMPTZ
 );
+
+ALTER TABLE chat_threads
+	ADD COLUMN IF NOT EXISTS last_message_id BIGINT;
 
 CREATE TABLE IF NOT EXISTS llm_threads (
 	id BIGSERIAL PRIMARY KEY,
@@ -640,14 +726,21 @@ CREATE TABLE IF NOT EXISTS chat_reads (
 	thread_id BIGINT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
 	user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 	last_read_at TIMESTAMPTZ NOT NULL,
+	last_read_message_id BIGINT,
 	PRIMARY KEY (thread_id, user_id)
 );
+
+ALTER TABLE chat_reads
+	ADD COLUMN IF NOT EXISTS last_read_message_id BIGINT;
 
 CREATE INDEX IF NOT EXISTS idx_markdown_entries_user_id ON markdown_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user_id ON webauthn_credentials(user_id);
 CREATE INDEX IF NOT EXISTS idx_login_records_user_id_logged_in_at ON login_records(user_id, logged_in_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_devices_user_id ON user_devices(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_devices_push_token ON user_devices(push_token);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_devices_user_device ON user_devices(user_id, device_type, device_id);
+CREATE INDEX IF NOT EXISTS idx_push_deliveries_message_id ON push_deliveries(message_id);
+CREATE INDEX IF NOT EXISTS idx_push_deliveries_user_id_created_at ON push_deliveries(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_llm_configs_owner_user_id ON llm_configs(owner_user_id, updated_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_configs_share_id ON llm_configs(share_id) WHERE share_id <> '';
 CREATE INDEX IF NOT EXISTS idx_bot_users_owner_user_id ON bot_users(owner_user_id, updated_at DESC);
@@ -1218,38 +1311,204 @@ func (s *Server) createUser(user *User) error {
 
 func (s *Server) upsertUserDevice(userID, deviceType, pushToken string, loginAt time.Time) error {
 	deviceType = normalizeDeviceType(deviceType)
+	deviceID := normalizeDeviceID("", deviceType)
 	pushToken = sanitizePushToken(pushToken)
 	_, err := s.db.Exec(
-		`INSERT INTO user_devices (user_id, device_type, push_token, is_online, last_login_at, last_seen_at, created_at, updated_at)
-		 VALUES ($1, $2, $3, FALSE, $4, $4, $4, $4)
-		 ON CONFLICT (user_id, device_type)
+		`INSERT INTO user_devices (user_id, device_type, device_id, push_token, push_enabled, is_online, last_login_at, last_seen_at, last_active_at, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, TRUE, FALSE, $5, $5, $5, $5, $5)
+		 ON CONFLICT (user_id, device_type, device_id)
 		 DO UPDATE SET push_token = EXCLUDED.push_token,
+		               push_enabled = CASE WHEN EXCLUDED.push_token <> '' THEN TRUE ELSE user_devices.push_enabled END,
 		               last_login_at = EXCLUDED.last_login_at,
 		               last_seen_at = EXCLUDED.last_seen_at,
+		               last_active_at = EXCLUDED.last_active_at,
 		               updated_at = EXCLUDED.updated_at`,
 		userID,
 		deviceType,
+		deviceID,
 		pushToken,
 		loginAt,
 	)
 	return err
 }
 
-func (s *Server) updateUserDevicePresence(userID, deviceType string, isOnline bool, seenAt time.Time) error {
+func (s *Server) upsertUserDeviceWithID(userID, deviceType, deviceID, pushToken string, loginAt time.Time) error {
 	deviceType = normalizeDeviceType(deviceType)
+	deviceID = normalizeDeviceID(deviceID, deviceType)
+	pushToken = sanitizePushToken(pushToken)
 	_, err := s.db.Exec(
-		`INSERT INTO user_devices (user_id, device_type, push_token, is_online, last_login_at, last_seen_at, created_at, updated_at)
-		 VALUES ($1, $2, '', $3, $4, $4, $4, $4)
-		 ON CONFLICT (user_id, device_type)
-		 DO UPDATE SET is_online = EXCLUDED.is_online,
+		`INSERT INTO user_devices (user_id, device_type, device_id, push_token, push_enabled, is_online, last_login_at, last_seen_at, last_active_at, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, CASE WHEN $4 <> '' THEN TRUE ELSE TRUE END, FALSE, $5, $5, $5, $5, $5)
+		 ON CONFLICT (user_id, device_type, device_id)
+		 DO UPDATE SET push_token = CASE WHEN EXCLUDED.push_token <> '' THEN EXCLUDED.push_token ELSE user_devices.push_token END,
+		               push_enabled = CASE WHEN EXCLUDED.push_token <> '' THEN TRUE ELSE user_devices.push_enabled END,
+		               last_login_at = EXCLUDED.last_login_at,
 		               last_seen_at = EXCLUDED.last_seen_at,
+		               last_active_at = EXCLUDED.last_active_at,
 		               updated_at = EXCLUDED.updated_at`,
 		userID,
 		deviceType,
+		deviceID,
+		pushToken,
+		loginAt,
+	)
+	return err
+}
+
+func (s *Server) updateUserDevicePresence(userID, deviceType, deviceID string, isOnline bool, seenAt time.Time) error {
+	deviceType = normalizeDeviceType(deviceType)
+	deviceID = normalizeDeviceID(deviceID, deviceType)
+	_, err := s.db.Exec(
+		`INSERT INTO user_devices (user_id, device_type, device_id, push_token, push_enabled, is_online, last_login_at, last_seen_at, last_active_at, created_at, updated_at)
+		 VALUES ($1, $2, $3, '', TRUE, $4, $5, $5, $5, $5, $5)
+		 ON CONFLICT (user_id, device_type, device_id)
+		 DO UPDATE SET is_online = EXCLUDED.is_online,
+		               last_seen_at = EXCLUDED.last_seen_at,
+		               last_active_at = EXCLUDED.last_active_at,
+		               updated_at = EXCLUDED.updated_at`,
+		userID,
+		deviceType,
+		deviceID,
 		isOnline,
 		seenAt,
 	)
 	return err
+}
+
+func (s *Server) updateUserDevicePushToken(userID, deviceType, deviceID, pushToken string, now time.Time) error {
+	deviceType = normalizeDeviceType(deviceType)
+	deviceID = normalizeDeviceID(deviceID, deviceType)
+	pushToken = sanitizePushToken(pushToken)
+	_, err := s.db.Exec(
+		`INSERT INTO user_devices (user_id, device_type, device_id, push_token, push_enabled, is_online, last_login_at, last_seen_at, last_active_at, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, CASE WHEN $4 <> '' THEN TRUE ELSE FALSE END, FALSE, $5, $5, $5, $5, $5)
+		 ON CONFLICT (user_id, device_type, device_id)
+		 DO UPDATE SET push_token = EXCLUDED.push_token,
+		               push_enabled = CASE WHEN EXCLUDED.push_token <> '' THEN TRUE ELSE FALSE END,
+		               last_seen_at = EXCLUDED.last_seen_at,
+		               last_active_at = EXCLUDED.last_active_at,
+		               updated_at = EXCLUDED.updated_at`,
+		userID,
+		deviceType,
+		deviceID,
+		pushToken,
+		now,
+	)
+	return err
+}
+
+func (s *Server) clearUserDevicePushToken(userID, deviceID string, now time.Time) error {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return errors.New("device id required")
+	}
+	_, err := s.db.Exec(
+		`UPDATE user_devices
+		    SET push_token = '',
+		        push_enabled = FALSE,
+		        last_seen_at = $3,
+		        last_active_at = $3,
+		        updated_at = $3
+		  WHERE user_id = $1 AND device_id = $2`,
+		userID,
+		deviceID,
+		now,
+	)
+	return err
+}
+
+func (s *Server) listUserDevices(userID string) ([]UserDevice, error) {
+	rows, err := s.db.Query(
+		`SELECT id, user_id, device_type, device_id, push_token, push_enabled, app_version, is_online, last_login_at, last_seen_at, last_active_at, created_at, updated_at
+		   FROM user_devices
+		  WHERE user_id = $1
+		  ORDER BY updated_at DESC, id DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]UserDevice, 0)
+	for rows.Next() {
+		var item UserDevice
+		var lastSeenAt sql.NullTime
+		var lastActiveAt sql.NullTime
+		if err := rows.Scan(
+			&item.ID,
+			&item.UserID,
+			&item.DeviceType,
+			&item.DeviceID,
+			&item.PushToken,
+			&item.PushEnabled,
+			&item.AppVersion,
+			&item.IsOnline,
+			&item.LastLoginAt,
+			&lastSeenAt,
+			&lastActiveAt,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if lastSeenAt.Valid {
+			item.LastSeenAt = &lastSeenAt.Time
+		}
+		if lastActiveAt.Valid {
+			item.LastActiveAt = &lastActiveAt.Time
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (s *Server) listPushableUserDevices(userID string) ([]UserDevice, error) {
+	rows, err := s.db.Query(
+		`SELECT id, user_id, device_type, device_id, push_token, push_enabled, app_version, is_online, last_login_at, last_seen_at, last_active_at, created_at, updated_at
+		   FROM user_devices
+		  WHERE user_id = $1
+		    AND push_enabled = TRUE
+		    AND push_token <> ''
+		  ORDER BY updated_at DESC, id DESC`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]UserDevice, 0)
+	for rows.Next() {
+		var item UserDevice
+		var lastSeenAt sql.NullTime
+		var lastActiveAt sql.NullTime
+		if err := rows.Scan(
+			&item.ID,
+			&item.UserID,
+			&item.DeviceType,
+			&item.DeviceID,
+			&item.PushToken,
+			&item.PushEnabled,
+			&item.AppVersion,
+			&item.IsOnline,
+			&item.LastLoginAt,
+			&lastSeenAt,
+			&lastActiveAt,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if lastSeenAt.Valid {
+			item.LastSeenAt = &lastSeenAt.Time
+		}
+		if lastActiveAt.Valid {
+			item.LastActiveAt = &lastActiveAt.Time
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func (s *Server) createMarkdownEntry(userID, title, filePath string, isPublic bool, uploadedAt time.Time) error {
@@ -2857,13 +3116,14 @@ func normalizeChatPair(userA, userB string) (string, string) {
 func (s *Server) ensureChatThread(userA, userB string, createdAt time.Time) (*ChatThread, error) {
 	userLow, userHigh := normalizeChatPair(userA, userB)
 	var thread ChatThread
+	var lastMessageID sql.NullInt64
 	var lastMessageAt sql.NullTime
 	err := s.db.QueryRow(
 		`INSERT INTO chat_threads (user_low, user_high, created_at, last_message)
 		 VALUES ($1, $2, $3, '')
 		 ON CONFLICT (user_low, user_high)
 		 DO UPDATE SET user_low = EXCLUDED.user_low
-		 RETURNING id, user_low, user_high, created_at, last_message, last_message_at`,
+		 RETURNING id, user_low, user_high, created_at, last_message, last_message_id, last_message_at`,
 		userLow,
 		userHigh,
 		createdAt,
@@ -2873,10 +3133,14 @@ func (s *Server) ensureChatThread(userA, userB string, createdAt time.Time) (*Ch
 		&thread.UserHigh,
 		&thread.CreatedAt,
 		&thread.LastMessage,
+		&lastMessageID,
 		&lastMessageAt,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if lastMessageID.Valid {
+		thread.LastMessageID = &lastMessageID.Int64
 	}
 	if lastMessageAt.Valid {
 		thread.LastMessageAt = &lastMessageAt.Time
@@ -3118,15 +3382,36 @@ func (s *Server) listChatMessages(threadID int64, llmThreadID *int64, limit, off
 	return messages, hasMore, nil
 }
 
-func (s *Server) markChatRead(threadID int64, userID string, readAt time.Time) error {
+func (s *Server) markChatRead(threadID int64, userID string, readAt time.Time, lastReadMessageID *int64) error {
 	_, err := s.db.Exec(
-		`INSERT INTO chat_reads (thread_id, user_id, last_read_at)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO chat_reads (thread_id, user_id, last_read_at, last_read_message_id)
+		 VALUES ($1, $2, $3, $4)
 		 ON CONFLICT (thread_id, user_id)
-		 DO UPDATE SET last_read_at = EXCLUDED.last_read_at`,
+		 DO UPDATE SET last_read_at = EXCLUDED.last_read_at,
+		               last_read_message_id = CASE
+		                   WHEN chat_reads.last_read_message_id IS NULL THEN EXCLUDED.last_read_message_id
+		                   WHEN EXCLUDED.last_read_message_id IS NULL THEN chat_reads.last_read_message_id
+		                   WHEN EXCLUDED.last_read_message_id > chat_reads.last_read_message_id THEN EXCLUDED.last_read_message_id
+		                   ELSE chat_reads.last_read_message_id
+		               END`,
 		threadID,
 		userID,
 		readAt,
+		lastReadMessageID,
+	)
+	return err
+}
+
+func (s *Server) upsertChatMemberStateViewed(threadID int64, userID string, openedAt time.Time) error {
+	_, err := s.db.Exec(
+		`INSERT INTO chat_member_state (thread_id, user_id, last_opened_at, created_at, updated_at)
+		 VALUES ($1, $2, $3, $3, $3)
+		 ON CONFLICT (thread_id, user_id)
+		 DO UPDATE SET last_opened_at = EXCLUDED.last_opened_at,
+		               updated_at = EXCLUDED.updated_at`,
+		threadID,
+		userID,
+		openedAt,
 	)
 	return err
 }
@@ -3428,9 +3713,10 @@ func (s *Server) createChatMessageWithOptions(threadID int64, llmThreadID *int64
 
 	if _, err = tx.Exec(
 		`UPDATE chat_threads
-		    SET last_message = $1, last_message_at = $2
-		  WHERE id = $3`,
+		    SET last_message = $1, last_message_id = $2, last_message_at = $3
+		  WHERE id = $4`,
 		content,
+		id,
 		createdAt,
 		threadID,
 	); err != nil {
@@ -3750,4 +4036,119 @@ func (s *Server) deleteChatMessage(threadID, messageID int64, userID string, del
 		return false, err
 	}
 	return true, nil
+}
+
+func (s *Server) createPushDelivery(messageID int64, userID, deviceID, pushToken, status, errorMessage string, now time.Time) error {
+	_, err := s.db.Exec(
+		`INSERT INTO push_deliveries (message_id, user_id, device_id, push_token, provider, status, apns_id, error_message, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, 'apns', $5, '', $6, $7, $7)`,
+		messageID,
+		userID,
+		strings.TrimSpace(deviceID),
+		sanitizePushToken(pushToken),
+		strings.TrimSpace(status),
+		strings.TrimSpace(errorMessage),
+		now,
+	)
+	return err
+}
+
+func (s *Server) claimPendingPushDeliveries(limit int, now time.Time) ([]PushDelivery, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if tx != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	rows, err := tx.Query(
+		`SELECT id, message_id, user_id, device_id, push_token, provider, status, apns_id, error_message, created_at, updated_at
+		   FROM push_deliveries
+		  WHERE status = 'pending'
+		  ORDER BY created_at ASC, id ASC
+		  LIMIT $1
+		  FOR UPDATE SKIP LOCKED`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]PushDelivery, 0, limit)
+	ids := make([]int64, 0, limit)
+	for rows.Next() {
+		var item PushDelivery
+		if err := rows.Scan(
+			&item.ID,
+			&item.MessageID,
+			&item.UserID,
+			&item.DeviceID,
+			&item.PushToken,
+			&item.Provider,
+			&item.Status,
+			&item.APNSID,
+			&item.ErrorMessage,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+		ids = append(ids, item.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		tx = nil
+		return items, nil
+	}
+
+	if _, err := tx.Exec(
+		`UPDATE push_deliveries
+		    SET status = 'processing',
+		        updated_at = $2
+		  WHERE id = ANY($1)`,
+		pq.Array(ids),
+		now,
+	); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	tx = nil
+	for i := range items {
+		items[i].Status = "processing"
+		items[i].UpdatedAt = now
+	}
+	return items, nil
+}
+
+func (s *Server) updatePushDeliveryResult(id int64, status, apnsID, errorMessage string, now time.Time) error {
+	_, err := s.db.Exec(
+		`UPDATE push_deliveries
+		    SET status = $2,
+		        apns_id = $3,
+		        error_message = $4,
+		        updated_at = $5
+		  WHERE id = $1`,
+		id,
+		strings.TrimSpace(status),
+		strings.TrimSpace(apnsID),
+		strings.TrimSpace(errorMessage),
+		now,
+	)
+	return err
 }

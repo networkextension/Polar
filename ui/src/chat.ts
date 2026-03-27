@@ -679,16 +679,21 @@ async function refreshActiveMessagesIfNeeded(threadId: string, force = false): P
 }
 
 async function openChat(chat: ChatSummary): Promise<void> {
+  const previousThreadId = activeThreadId;
   activeThreadId = chat.id;
   activeMessageLoadedAt = "";
   activeLLMThreadId = null;
   updateActiveChatHeader();
   messageInput.disabled = false;
   renderChatList(chatCache);
+  if (previousThreadId && previousThreadId !== chat.id) {
+    sendPresence("leave_thread", previousThreadId);
+  }
   await loadLLMThreads(chat.id);
   await loadChatLLMConfigs();
   await loadMessages(chat.id);
   await loadChats(chat.id);
+  sendPresence("view_thread", chat.id);
 }
 
 async function revokeMessage(messageId: string): Promise<void> {
@@ -734,6 +739,21 @@ function getWebSocketUrl(): string {
   return `${protocol}//${window.location.host}/ws/chat`;
 }
 
+function sendPresence(action: "view_thread" | "leave_thread", threadId?: string | null): void {
+  if (!wsConnected || !ws || ws.readyState !== WebSocket.OPEN) {
+    return;
+  }
+  const parsedThreadId = Number(threadId || 0);
+  if (action === "view_thread" && parsedThreadId <= 0) {
+    return;
+  }
+  ws.send(JSON.stringify({
+    type: "presence",
+    action,
+    thread_id: parsedThreadId > 0 ? parsedThreadId : undefined,
+  }));
+}
+
 function connectWebSocket(): void {
   try {
     ws = new WebSocket(getWebSocketUrl());
@@ -745,6 +765,9 @@ function connectWebSocket(): void {
   ws.addEventListener("open", () => {
     wsConnected = true;
     stopPolling();
+    if (activeThreadId) {
+      sendPresence("view_thread", activeThreadId);
+    }
   });
 
   ws.addEventListener("close", () => {
@@ -952,3 +975,9 @@ async function init(): Promise<void> {
 }
 
 void init();
+
+window.addEventListener("beforeunload", () => {
+  if (activeThreadId) {
+    sendPresence("leave_thread", activeThreadId);
+  }
+});

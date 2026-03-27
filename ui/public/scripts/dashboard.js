@@ -3,11 +3,11 @@ import { fetchCurrentUser, logout } from "./api/session.js";
 import { formatDeviceType } from "./lib/client.js";
 import { makeDefaultAvatar } from "./lib/avatar.js";
 import { byId, query } from "./lib/dom.js";
-import { getLang, setLang, t } from "./lib/i18n.js";
 import { renderMarkdown } from "./lib/marked.js";
 import { base64URLToBuffer, credentialToJSON } from "./lib/passkey.js";
 import { hydrateSiteBrand, renderSiteBrand } from "./lib/site.js";
 import { bindThemeSync, initStoredTheme, applyTheme } from "./lib/theme.js";
+import { t } from "./lib/i18n.js";
 const welcomeText = byId("welcomeText");
 const entryList = byId("entryList");
 const entryContent = byId("entryContent");
@@ -60,8 +60,6 @@ const siteAdminModalCloseBtn = byId("siteAdminModalCloseBtn");
 const settingsSectionLead = byId("settingsSectionLead");
 const siteAdminPanel = byId("siteAdminPanel");
 const themeCurrentValue = byId("themeCurrentValue");
-const languageCurrentValue = byId("languageCurrentValue");
-const languageToggleBtn = byId("languageToggleBtn");
 const llmConfigForm = byId("llmConfigForm");
 const llmConfigNameInput = byId("llmConfigNameInput");
 const llmConfigBaseUrlInput = byId("llmConfigBaseUrlInput");
@@ -163,11 +161,6 @@ function setActiveEntryItem() {
 function syncThemeButton(theme) {
     themeToggleBtn.textContent = theme === "mono" ? t("dashboard.switchToDefault") : t("dashboard.switchToMonochrome");
     themeCurrentValue.textContent = theme === "mono" ? t("dashboard.themeMonochrome") : t("dashboard.themeDefault");
-}
-function syncLanguageButton() {
-    const lang = getLang();
-    languageCurrentValue.textContent = lang === "zh-CN" ? t("dashboard.languageChinese") : t("dashboard.languageEnglish");
-    languageToggleBtn.textContent = lang === "zh-CN" ? t("dashboard.switchToEnglish") : t("dashboard.switchToChinese");
 }
 function switchSettingsSection(section) {
     activeSettingsSection = section;
@@ -413,7 +406,7 @@ function renderBotUserList(bots) {
             </div>
             <div class="tag-item-meta">${t("dashboard.botUserId", { id: bot.bot_user_id })}</div>
             <div class="tag-item-desc">${bot.description || t("dashboard.noDescription")}</div>
-            <div class="tag-item-meta">${bot.system_prompt ? t("dashboard.botPromptPreview", { preview: bot.system_prompt.slice(0, 36) }) : t("dashboard.noBotPrompt")}</div>
+            <div class="tag-item-meta">${bot.system_prompt ? t("dashboard.botPromptPreview", { preview: bot.system_prompt.slice(0, 36) + (bot.system_prompt.length > 36 ? "" : "") }) : t("dashboard.noBotPrompt")}</div>
           </div>
           <div class="tag-item-actions">
             <button class="btn-inline btn-secondary" type="button" data-action="chat">${t("dashboard.chat")}</button>
@@ -440,7 +433,7 @@ async function loadLoginHistory() {
         const time = new Date(record.logged_in_at).toLocaleString();
         return `
         <li>
-          <div class="meta-title">${record.ip_address || t("dashboard.unknownIp")} · ${formatLoginMethod(record.login_method)} · ${formatDeviceType(record.device_type)}</div>
+          <div class="meta-title">${record.ip_address || t("dashboard.unknownIp")} · ${formatLoginMethod(record.login_method)} · ${formatDeviceType(record.device_type, t)}</div>
           <div class="meta-subtitle">${formatLocation(record)}</div>
           <div class="meta-time">${time}</div>
         </li>
@@ -788,7 +781,7 @@ llmConfigTestBtn.addEventListener("click", async () => {
         setStatusMessage(llmConfigStatus, response.ok ? data.message || t("dashboard.llmTestSuccess") : data.error || t("dashboard.llmTestFailed"), response.ok ? "success" : "error");
     }
     catch {
-        setStatusMessage(llmConfigStatus, t("dashboard.networkErrorPeriod"), "error");
+        setStatusMessage(llmConfigStatus, t("common.networkErrorRetry"), "error");
     }
     finally {
         llmConfigTestBtn.disabled = false;
@@ -830,7 +823,7 @@ llmConfigForm.addEventListener("submit", async (event) => {
         await loadSiteAdminData();
     }
     catch {
-        llmConfigStatus.textContent = t("dashboard.networkErrorPeriod");
+        llmConfigStatus.textContent = t("common.networkErrorRetry");
     }
     finally {
         llmConfigSubmitBtn.disabled = false;
@@ -903,7 +896,7 @@ botUserForm.addEventListener("submit", async (event) => {
         await loadSiteAdminData();
     }
     catch {
-        botUserStatus.textContent = t("dashboard.networkErrorPeriod");
+        botUserStatus.textContent = t("common.networkErrorRetry");
     }
     finally {
         botUserSubmitBtn.disabled = false;
@@ -968,7 +961,7 @@ saveSiteBtn.addEventListener("click", async () => {
         siteStatus.textContent = t("dashboard.siteInfoSaved");
     }
     catch {
-        siteStatus.textContent = t("dashboard.networkErrorPeriod");
+        siteStatus.textContent = t("common.networkErrorRetry");
     }
     finally {
         saveSiteBtn.disabled = false;
@@ -990,7 +983,7 @@ siteIconFile.addEventListener("change", async () => {
     try {
         const { response, data } = await uploadSiteIcon(formData);
         if (!response.ok) {
-            siteStatus.textContent = data.error || t("common.saveFailed");
+            siteStatus.textContent = data.error || t("common.submitFailed");
             return;
         }
         renderSiteSettings(data.site);
@@ -998,7 +991,7 @@ siteIconFile.addEventListener("change", async () => {
         siteStatus.textContent = t("dashboard.siteIconUpdated");
     }
     catch {
-        siteStatus.textContent = t("dashboard.networkErrorPeriod");
+        siteStatus.textContent = t("common.networkErrorRetry");
     }
     finally {
         siteIconFile.value = "";
@@ -1021,14 +1014,14 @@ async function handleApplePushCertificateUpload(environment, fileInput) {
     try {
         const { response, data } = await uploadApplePushCertificate(environment, formData);
         if (!response.ok) {
-            siteStatus.textContent = data.error || t("common.saveFailed");
+            siteStatus.textContent = data.error || t("common.submitFailed");
             return;
         }
         renderSiteSettings(data.site);
         siteStatus.textContent = t("dashboard.certUpdated", { env: environment });
     }
     catch {
-        siteStatus.textContent = t("dashboard.networkErrorPeriod");
+        siteStatus.textContent = t("common.networkErrorRetry");
     }
     finally {
         fileInput.value = "";
@@ -1049,7 +1042,7 @@ async function handleApplePushCertificateDelete(environment) {
         siteStatus.textContent = t("dashboard.certDeleted", { env: environment });
     }
     catch {
-        siteStatus.textContent = t("dashboard.networkErrorPeriod");
+        siteStatus.textContent = t("common.networkErrorRetry");
     }
 }
 applePushDevFile.addEventListener("change", async () => {
@@ -1208,7 +1201,7 @@ saveIconBtn.addEventListener("click", async () => {
         try {
             const { response, data } = await uploadUserIcon(formData);
             if (!response.ok) {
-                iconStatus.textContent = data.error || t("common.saveFailed");
+                iconStatus.textContent = data.error || t("common.submitFailed");
                 return;
             }
             const nextAvatar = `${data.icon_url || ""}?v=${Date.now()}`;
@@ -1228,56 +1221,45 @@ themeToggleBtn.addEventListener("click", () => {
     const nextTheme = applyTheme(currentTheme === "mono" ? "default" : "mono", true);
     syncThemeButton(nextTheme);
 });
-languageToggleBtn.addEventListener("click", () => {
-    setLang(getLang() === "en" ? "zh-CN" : "en");
-    window.location.reload();
-});
 passkeyRegisterBtn.addEventListener("click", async () => {
     if (!window.PublicKeyCredential) {
-        passkeyStatus.textContent = t("dashboard.passkeyNotSupported");
+        setStatusMessage(passkeyStatus, "当前浏览器不支持 Passkey。", "error");
         return;
     }
-    passkeyStatus.textContent = t("dashboard.passkeyStarting");
+    setStatusMessage(passkeyStatus, "正在启动 Passkey...");
     try {
         const { response: beginResponse, data: beginResult } = await beginPasskeyRegistration();
         if (!beginResponse.ok) {
-            setStatusMessage(passkeyStatus, beginResult.error || t("dashboard.passkeyBeginFailed"), "error");
+            setStatusMessage(passkeyStatus, beginResult.error || "无法发起 Passkey 绑定", "error");
             return;
         }
-
         const publicKey = beginResult.publicKey;
         publicKey.challenge = base64URLToBuffer(publicKey.challenge);
         publicKey.user.id = base64URLToBuffer(publicKey.user.id);
-
         if (publicKey.excludeCredentials) {
             publicKey.excludeCredentials = publicKey.excludeCredentials.map((cred) => ({
                 ...cred,
                 id: base64URLToBuffer(cred.id),
             }));
         }
-
-        const credential = await navigator.credentials.create({ publicKey });
+        const credential = await navigator.credentials.create({
+            publicKey: publicKey,
+        });
         const payload = credentialToJSON(credential);
-
-        const { response: finishResponse, data: finishResult } = await finishPasskeyRegistration(
-            beginResult.session_id || "",
-            payload
-        );
-
+        const { response: finishResponse, data: finishResult } = await finishPasskeyRegistration(beginResult.session_id || "", payload);
         if (!finishResponse.ok) {
-            setStatusMessage(passkeyStatus, finishResult.error || t("dashboard.passkeyFailed"), "error");
+            setStatusMessage(passkeyStatus, finishResult.error || "Passkey 绑定失败", "error");
             return;
         }
-
         renderPasskeys(finishResult.credentials || []);
-        setStatusMessage(passkeyStatus, finishResult.message || t("dashboard.passkeySuccess"), "success");
-    } catch {
-        setStatusMessage(passkeyStatus, t("dashboard.networkErrorPeriod"), "error");
+        setStatusMessage(passkeyStatus, finishResult.message || "Passkey 绑定成功！", "success");
+    }
+    catch {
+        setStatusMessage(passkeyStatus, "网络错误，请重试", "error");
     }
 });
 const initialTheme = initStoredTheme();
 syncThemeButton(initialTheme);
-syncLanguageButton();
 bindThemeSync(syncThemeButton);
 switchSettingsSection(activeSettingsSection);
 void (async () => {

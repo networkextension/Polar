@@ -35,4 +35,13 @@ type Config struct {
 	AIAgentBaseURL      string
 	AIAgentModel        string
 	AIAgentSystemPrompt string
+	ApplePushTopic      string
+	ApplePushTopicDev   string
+	ApplePushTopicProd  string
+	ApplePushKeyID      string
+	ApplePushKeyIDDev   string
+	ApplePushKeyIDProd  string
+	ApplePushTeamID     string
+	ApplePushTeamIDDev  string
+	ApplePushTeamIDProd string
 }
