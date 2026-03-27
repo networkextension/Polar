@@ -10,6 +10,8 @@ import (
 	"syscall"
 )
 
+var version string
+
 func (s *Server) hydrateSiteSettings(settings *SiteSettings) *SiteSettings {
 	if settings == nil {
 		return nil
@@ -32,6 +34,11 @@ func (s *Server) collectSystemInfo() *SystemInfo {
 }
 
 func (s *Server) gitTagVersion() string {
+	// If version is set at build time, use it
+	if version != "" {
+		return version
+	}
+
 	candidates := []string{}
 	if s != nil && strings.TrimSpace(s.workDir) != "" {
 		candidates = append(candidates, s.workDir)

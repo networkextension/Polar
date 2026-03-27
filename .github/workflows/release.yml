@@ -86,8 +86,8 @@ jobs:
       - name: Build ${{ matrix.os }}/${{ matrix.arch }} binary (verbose)
         run: |
           set -euo pipefail
-          echo "Building: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -v -x -o \"$BINARY_NAME\" ./$BIN_PATH"
-          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -v -x -o "$BINARY_NAME" ./$BIN_PATH || {
+          echo "Building: GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -v -x -ldflags \"-X gin-auth-app/internal/app/dock.version=${GITHUB_REF_NAME}\" -o \"$BINARY_NAME\" ./$BIN_PATH"
+          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} CGO_ENABLED=0 go build -v -x -ldflags "-X gin-auth-app/internal/app/dock.version=${GITHUB_REF_NAME}" -o "$BINARY_NAME" ./$BIN_PATH || {
             echo "go build failed; printing cmd/dock tree and files:"
             ls -R cmd/dock || true
             exit 1
