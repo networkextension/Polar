@@ -239,22 +239,33 @@ type ChatSummary struct {
 	ReplyRequiredMessage string     `json:"reply_required_message"`
 }
 
+type ChatMessageAttachment struct {
+	URL          string `json:"url"`
+	FileName     string `json:"file_name"`
+	Size         int64  `json:"size"`
+	MimeType     string `json:"mime_type"`
+	ThumbnailURL string `json:"thumbnail_url,omitempty"`
+	Width        int    `json:"width,omitempty"`
+	Height       int    `json:"height,omitempty"`
+}
+
 type ChatMessage struct {
-	ID              int64      `json:"id"`
-	ThreadID        int64      `json:"thread_id"`
-	LLMThreadID     *int64     `json:"llm_thread_id,omitempty"`
-	SenderID        string     `json:"sender_id"`
-	SenderUsername  string     `json:"sender_username"`
-	SenderIcon      string     `json:"sender_icon"`
-	MessageType     string     `json:"message_type"`
-	Failed          bool       `json:"failed"`
-	Content         string     `json:"content"`
-	MarkdownEntryID *int64     `json:"markdown_entry_id,omitempty"`
-	MarkdownTitle   string     `json:"markdown_title,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
-	DeletedBy       string     `json:"deleted_by,omitempty"`
-	Deleted         bool       `json:"deleted"`
+	ID              int64                  `json:"id"`
+	ThreadID        int64                  `json:"thread_id"`
+	LLMThreadID     *int64                 `json:"llm_thread_id,omitempty"`
+	SenderID        string                 `json:"sender_id"`
+	SenderUsername  string                 `json:"sender_username"`
+	SenderIcon      string                 `json:"sender_icon"`
+	MessageType     string                 `json:"message_type"`
+	Failed          bool                   `json:"failed"`
+	Content         string                 `json:"content"`
+	MarkdownEntryID *int64                 `json:"markdown_entry_id,omitempty"`
+	MarkdownTitle   string                 `json:"markdown_title,omitempty"`
+	Attachment      *ChatMessageAttachment `json:"attachment,omitempty"`
+	CreatedAt       time.Time              `json:"created_at"`
+	DeletedAt       *time.Time             `json:"deleted_at,omitempty"`
+	DeletedBy       string                 `json:"deleted_by,omitempty"`
+	Deleted         bool                   `json:"deleted"`
 }
 
 type LLMThread struct {
@@ -735,6 +746,9 @@ ALTER TABLE chat_messages
 
 ALTER TABLE chat_messages
 	ADD COLUMN IF NOT EXISTS llm_thread_id BIGINT REFERENCES llm_threads(id) ON DELETE SET NULL;
+
+ALTER TABLE chat_messages
+	ADD COLUMN IF NOT EXISTS attachment TEXT;
 
 CREATE TABLE IF NOT EXISTS chat_reads (
 	thread_id BIGINT NOT NULL REFERENCES chat_threads(id) ON DELETE CASCADE,
@@ -3434,7 +3448,7 @@ func (s *Server) listChatMessages(threadID int64, llmThreadID *int64, limit, off
 	if offset < 0 {
 		offset = 0
 	}
-	query := `SELECT m.id, m.thread_id, m.llm_thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.failed, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
+	query := `SELECT m.id, m.thread_id, m.llm_thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.failed, m.content, m.markdown_entry_id, m.markdown_title, m.attachment, m.created_at, m.deleted_at, m.deleted_by
 		   FROM chat_messages m
 		   JOIN users u ON u.id = m.sender_id
 		  WHERE m.thread_id = $1`
@@ -3457,6 +3471,7 @@ func (s *Server) listChatMessages(threadID int64, llmThreadID *int64, limit, off
 		var msg ChatMessage
 		var llmThreadIDValue sql.NullInt64
 		var markdownEntryID sql.NullInt64
+		var attachmentJSON sql.NullString
 		var deletedAt sql.NullTime
 		var deletedBy sql.NullString
 		if err := rows.Scan(
@@ -3471,6 +3486,7 @@ func (s *Server) listChatMessages(threadID int64, llmThreadID *int64, limit, off
 			&msg.Content,
 			&markdownEntryID,
 			&msg.MarkdownTitle,
+			&attachmentJSON,
 			&msg.CreatedAt,
 			&deletedAt,
 			&deletedBy,
@@ -3490,6 +3506,12 @@ func (s *Server) listChatMessages(threadID int64, llmThreadID *int64, limit, off
 		}
 		if deletedBy.Valid {
 			msg.DeletedBy = deletedBy.String
+		}
+		if attachmentJSON.Valid && attachmentJSON.String != "" {
+			var att ChatMessageAttachment
+			if jsonErr := json.Unmarshal([]byte(attachmentJSON.String), &att); jsonErr == nil {
+				msg.Attachment = &att
+			}
 		}
 		messages = append(messages, msg)
 	}
@@ -3866,6 +3888,54 @@ func (s *Server) createChatMessageWithMetadata(threadID int64, llmThreadID *int6
 	return s.createChatMessageWithOptions(threadID, llmThreadID, senderID, messageType, false, content, markdownEntryID, markdownTitle, createdAt)
 }
 
+func (s *Server) createAttachmentChatMessage(threadID int64, senderID, preview string, att ChatMessageAttachment, createdAt time.Time) (int64, error) {
+	attJSON, err := json.Marshal(att)
+	if err != nil {
+		return 0, err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	var id int64
+	err = tx.QueryRow(
+		`INSERT INTO chat_messages (thread_id, sender_id, message_type, failed, content, attachment, created_at)
+		 VALUES ($1, $2, 'attachment', FALSE, $3, $4, $5)
+		 RETURNING id`,
+		threadID,
+		senderID,
+		preview,
+		string(attJSON),
+		createdAt,
+	).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+
+	if _, err = tx.Exec(
+		`UPDATE chat_threads
+		    SET last_message = $1, last_message_id = $2, last_message_at = $3
+		  WHERE id = $4`,
+		preview,
+		id,
+		createdAt,
+		threadID,
+	); err != nil {
+		return 0, err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
 func (s *Server) createChatMessageWithOptions(threadID int64, llmThreadID *int64, senderID, messageType string, failed bool, content string, markdownEntryID *int64, markdownTitle string, createdAt time.Time) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -3949,8 +4019,9 @@ func (s *Server) getChatMessageByID(messageID int64) (*ChatMessage, error) {
 	var markdownEntryID sql.NullInt64
 	var deletedAt sql.NullTime
 	var deletedBy sql.NullString
+	var attachmentJSON sql.NullString
 	err := s.db.QueryRow(
-		`SELECT m.id, m.thread_id, m.llm_thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.failed, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
+		`SELECT m.id, m.thread_id, m.llm_thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.failed, m.content, m.markdown_entry_id, m.markdown_title, m.attachment, m.created_at, m.deleted_at, m.deleted_by
 		   FROM chat_messages m
 		   JOIN users u ON u.id = m.sender_id
 		  WHERE m.id = $1`,
@@ -3967,6 +4038,7 @@ func (s *Server) getChatMessageByID(messageID int64) (*ChatMessage, error) {
 		&msg.Content,
 		&markdownEntryID,
 		&msg.MarkdownTitle,
+		&attachmentJSON,
 		&msg.CreatedAt,
 		&deletedAt,
 		&deletedBy,
@@ -3991,6 +4063,12 @@ func (s *Server) getChatMessageByID(messageID int64) (*ChatMessage, error) {
 	if deletedBy.Valid {
 		msg.DeletedBy = deletedBy.String
 	}
+	if attachmentJSON.Valid && attachmentJSON.String != "" {
+		var att ChatMessageAttachment
+		if jsonErr := json.Unmarshal([]byte(attachmentJSON.String), &att); jsonErr == nil {
+			msg.Attachment = &att
+		}
+	}
 	return &msg, nil
 }
 
@@ -3998,7 +4076,7 @@ func (s *Server) listRecentChatMessages(threadID int64, llmThreadID *int64, limi
 	if limit <= 0 {
 		limit = 10
 	}
-	query := `SELECT m.id, m.thread_id, m.llm_thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.failed, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
+	query := `SELECT m.id, m.thread_id, m.llm_thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.failed, m.content, m.markdown_entry_id, m.markdown_title, m.attachment, m.created_at, m.deleted_at, m.deleted_by
 		   FROM chat_messages m
 		   JOIN users u ON u.id = m.sender_id
 		  WHERE m.thread_id = $1`
@@ -4021,6 +4099,7 @@ func (s *Server) listRecentChatMessages(threadID int64, llmThreadID *int64, limi
 		var msg ChatMessage
 		var llmThreadIDValue sql.NullInt64
 		var markdownEntryID sql.NullInt64
+		var attachmentJSON sql.NullString
 		var deletedAt sql.NullTime
 		var deletedBy sql.NullString
 		if err := rows.Scan(
@@ -4035,6 +4114,7 @@ func (s *Server) listRecentChatMessages(threadID int64, llmThreadID *int64, limi
 			&msg.Content,
 			&markdownEntryID,
 			&msg.MarkdownTitle,
+			&attachmentJSON,
 			&msg.CreatedAt,
 			&deletedAt,
 			&deletedBy,
@@ -4054,6 +4134,12 @@ func (s *Server) listRecentChatMessages(threadID int64, llmThreadID *int64, limi
 		if deletedBy.Valid {
 			msg.DeletedBy = deletedBy.String
 		}
+		if attachmentJSON.Valid && attachmentJSON.String != "" {
+			var att ChatMessageAttachment
+			if jsonErr := json.Unmarshal([]byte(attachmentJSON.String), &att); jsonErr == nil {
+				msg.Attachment = &att
+			}
+		}
 		items = append(items, msg)
 	}
 	if err := rows.Err(); err != nil {
@@ -4070,7 +4156,7 @@ func (s *Server) findRetrySourceMessage(threadID int64, targetMessage *ChatMessa
 		return nil, nil
 	}
 
-	query := `SELECT m.id, m.thread_id, m.llm_thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.failed, m.content, m.markdown_entry_id, m.markdown_title, m.created_at, m.deleted_at, m.deleted_by
+	query := `SELECT m.id, m.thread_id, m.llm_thread_id, m.sender_id, u.username, u.icon_url, m.message_type, m.failed, m.content, m.markdown_entry_id, m.markdown_title, m.attachment, m.created_at, m.deleted_at, m.deleted_by
 	   FROM chat_messages m
 	   JOIN users u ON u.id = m.sender_id
 	  WHERE m.thread_id = $1
@@ -4090,6 +4176,7 @@ func (s *Server) findRetrySourceMessage(threadID int64, targetMessage *ChatMessa
 	var msg ChatMessage
 	var llmThreadID sql.NullInt64
 	var markdownEntryID sql.NullInt64
+	var attachmentJSON sql.NullString
 	var deletedAt sql.NullTime
 	var deletedBy sql.NullString
 	err := row.Scan(
@@ -4104,6 +4191,7 @@ func (s *Server) findRetrySourceMessage(threadID int64, targetMessage *ChatMessa
 		&msg.Content,
 		&markdownEntryID,
 		&msg.MarkdownTitle,
+		&attachmentJSON,
 		&msg.CreatedAt,
 		&deletedAt,
 		&deletedBy,
@@ -4126,6 +4214,12 @@ func (s *Server) findRetrySourceMessage(threadID int64, targetMessage *ChatMessa
 	}
 	if deletedBy.Valid {
 		msg.DeletedBy = deletedBy.String
+	}
+	if attachmentJSON.Valid && attachmentJSON.String != "" {
+		var att ChatMessageAttachment
+		if jsonErr := json.Unmarshal([]byte(attachmentJSON.String), &att); jsonErr == nil {
+			msg.Attachment = &att
+		}
 	}
 	return &msg, nil
 }

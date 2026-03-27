@@ -2094,6 +2094,69 @@ textarea {
   margin-top: auto;
 }
 
+.message-attach-btn {
+  cursor: pointer;
+  flex-shrink: 0;
+  user-select: none;
+  font-size: 16px;
+  padding: 6px 10px;
+}
+
+.message-attach-btn.uploading {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.message-attachment-image {
+  display: block;
+  max-width: 240px;
+  max-height: 200px;
+  border-radius: 8px;
+  object-fit: cover;
+  cursor: pointer;
+}
+
+.message-attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-decoration: none;
+  color: inherit;
+  max-width: 260px;
+}
+
+.message-attachment-file:hover {
+  background: var(--surface-strong);
+}
+
+.message-attachment-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.message-attachment-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.message-attachment-name {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-attachment-size {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
 .message-input {
   flex: 1;
   margin-bottom: 0;

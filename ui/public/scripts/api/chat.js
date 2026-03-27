@@ -1,4 +1,12 @@
 import { request, requestJson } from "./http.js";
+export async function sendAttachment(threadId, file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    return requestJson(`/api/chats/${threadId}/messages/attachment`, {
+        method: "POST",
+        body: formData,
+    });
+}
 export async function fetchChats(limit = 50) {
     return requestJson(`/api/chats?limit=${limit}`);
 }

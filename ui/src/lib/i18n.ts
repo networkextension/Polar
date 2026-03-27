@@ -134,6 +134,12 @@ const en: Record<string, string> = {
   "chat.messagePlaceholder": "Write something...",
   "chat.backToPosts": "Back to Posts",
   "chat.backToDashboard": "Back to Dashboard",
+  "chat.sendAttachment": "Send attachment",
+  "chat.uploading": "Uploading...",
+  "chat.attachmentFailed": "Failed to send attachment",
+  "chat.downloadFile": "Download",
+  "chat.fileSizeKB": "{{size}} KB",
+  "chat.fileSizeMB": "{{size}} MB",
 
   // Editor
   "editor.heading": "Markdown Editor",
@@ -669,6 +675,12 @@ const zhCN: Record<string, string> = {
   "chat.messagePlaceholder": "写点什么...",
   "chat.backToPosts": "返回帖子广场",
   "chat.backToDashboard": "返回控制台",
+  "chat.sendAttachment": "发送附件",
+  "chat.uploading": "正在上传...",
+  "chat.attachmentFailed": "附件发送失败",
+  "chat.downloadFile": "下载",
+  "chat.fileSizeKB": "{{size}} KB",
+  "chat.fileSizeMB": "{{size}} MB",
 
   "editor.heading": "Markdown 编辑器",
   "editor.newEntry": "新建一条记录",

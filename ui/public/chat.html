@@ -66,6 +66,10 @@
           </div>
           <div id="messageList" class="message-list"></div>
           <form id="messageForm" class="message-form">
+            <label id="attachmentBtn" class="btn-inline btn-secondary message-attach-btn" title="Send attachment" data-i18n-title="chat.sendAttachment">
+              📎
+              <input id="attachmentInput" type="file" style="display:none" accept="image/*,video/*,application/*,text/*" />
+            </label>
             <input id="messageInput" class="input message-input" type="text" data-i18n-placeholder="chat.messagePlaceholder" placeholder="Write something..." required />
             <button class="btn-inline btn-secondary" type="submit" data-i18n="chat.send">Send</button>
           </form>

@@ -23,6 +23,16 @@ export type StartChatResponse = {
   error?: string;
 };
 
+export type ChatMessageAttachment = {
+  url: string;
+  file_name: string;
+  size: number;
+  mime_type: string;
+  thumbnail_url?: string;
+  width?: number;
+  height?: number;
+};
+
 export type ChatMessage = {
   id: string;
   llm_thread_id?: number;
@@ -34,6 +44,7 @@ export type ChatMessage = {
   content: string;
   markdown_entry_id?: number;
   markdown_title?: string;
+  attachment?: ChatMessageAttachment;
   deleted?: boolean;
   created_at: string;
 };

@@ -9,6 +9,15 @@ import type {
   SendMessageResponse,
 } from "../types/chat.js";
 
+export async function sendAttachment(threadId: string, file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return requestJson<SendMessageResponse>(`/api/chats/${threadId}/messages/attachment`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
 export async function fetchChats(limit = 50) {
   return requestJson<ChatListResponse>(`/api/chats?limit=${limit}`);
 }

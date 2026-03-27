@@ -1,4 +1,4 @@
-import { createLLMThread, fetchChatLLMConfigs, fetchChats, fetchLLMThreads, fetchMessages, fetchSharedMarkdown, retryMessage, revokeMessage as revokeChatMessage, sendMessage, startChat, switchLLMThreadConfig, updateLLMThread } from "./api/chat.js";
+import { createLLMThread, fetchChatLLMConfigs, fetchChats, fetchLLMThreads, fetchMessages, fetchSharedMarkdown, retryMessage, revokeMessage as revokeChatMessage, sendAttachment, sendMessage, startChat, switchLLMThreadConfig, updateLLMThread } from "./api/chat.js";
 import { requestJson } from "./api/http.js";
 import { fetchCurrentUser } from "./api/session.js";
 import { resolveAvatar } from "./lib/avatar.js";
@@ -24,6 +24,8 @@ const chatModelBar = byId("chatModelBar");
 const chatModelCurrent = byId("chatModelCurrent");
 const chatModelSelect = byId("chatModelSelect");
 const chatSwitchModelBtn = byId("chatSwitchModelBtn");
+const attachmentBtn = byId("attachmentBtn");
+const attachmentInput = byId("attachmentInput");
 let currentUserId = "";
 let activeThreadId = null;
 let chatCache = [];
@@ -52,6 +54,49 @@ function escapeHtml(input) {
         .split(">").join("&gt;")
         .split('"').join("&quot;")
         .split("'").join("&#39;");
+}
+function formatFileSize(bytes) {
+    if (bytes >= 1024 * 1024) {
+        return t("chat.fileSizeMB", { size: (bytes / (1024 * 1024)).toFixed(1) });
+    }
+    return t("chat.fileSizeKB", { size: String(Math.ceil(bytes / 1024)) });
+}
+function attachmentIcon(mimeType) {
+    if (mimeType.startsWith("image/"))
+        return "🖼️";
+    if (mimeType.startsWith("video/"))
+        return "🎬";
+    if (mimeType.startsWith("audio/"))
+        return "🎵";
+    if (mimeType.includes("pdf"))
+        return "📄";
+    if (mimeType.includes("zip") || mimeType.includes("compress"))
+        return "🗜️";
+    return "📎";
+}
+function renderAttachment(att) {
+    const isImage = att.mime_type.startsWith("image/");
+    const isVideo = att.mime_type.startsWith("video/");
+    const fileUrl = escapeHtml(att.url);
+    const fileName = escapeHtml(att.file_name);
+    const sizeStr = escapeHtml(formatFileSize(att.size));
+    if (isImage) {
+        const thumbUrl = escapeHtml(att.thumbnail_url || att.url);
+        return `<a href="${fileUrl}" target="_blank" rel="noopener"><img class="message-attachment-image" src="${thumbUrl}" alt="${fileName}" title="${fileName}" /></a>`;
+    }
+    if (isVideo) {
+        return `<video class="message-attachment-image" src="${fileUrl}" controls preload="metadata"></video>`;
+    }
+    const icon = attachmentIcon(att.mime_type);
+    return `
+    <a class="message-attachment-file" href="${fileUrl}" target="_blank" rel="noopener" download="${fileName}">
+      <span class="message-attachment-icon">${icon}</span>
+      <div class="message-attachment-meta">
+        <div class="message-attachment-name">${fileName}</div>
+        <div class="message-attachment-size">${sizeStr}</div>
+      </div>
+    </a>
+  `;
 }
 async function copyTextToClipboard(text) {
     if (!text) {
@@ -427,10 +472,13 @@ function renderMessages(messages) {
         const textActions = !isSharedMarkdown && retryAction
             ? `<div class="message-inline-actions">${retryAction}</div>`
             : "";
+        const isAttachment = msg.message_type === "attachment" && Boolean(msg.attachment);
         const content = msg.deleted
             ? t("chat.messageRevoked")
-            : isSharedMarkdown
-                ? `
+            : isAttachment && msg.attachment
+                ? renderAttachment(msg.attachment)
+                : isSharedMarkdown
+                    ? `
               <div class="message-markdown-card">
                 <div class="message-markdown-title">${escapeHtml(msg.markdown_title || t("chat.aiMarkdownReply"))}</div>
                 <div class="message-markdown-preview">${escapeHtml(msg.content || "")}</div>
@@ -438,9 +486,9 @@ function renderMessages(messages) {
                 ${markdownActions}
               </div>
             `
-                : isSystem
-                    ? renderMarkdown(msg.content || "")
-                    : escapeHtml(msg.content || "");
+                    : isSystem
+                        ? renderMarkdown(msg.content || "")
+                        : escapeHtml(msg.content || "");
         const bubbleClass = msg.deleted ? "message-bubble deleted" : "message-bubble";
         const contentClass = isSharedMarkdown
             ? "message-bubble-content"
@@ -638,7 +686,9 @@ async function loadMessages(threadId) {
     activeChatBlockMessage = data.block_message || "";
     activeChatReplyRequired = Boolean(data.reply_required);
     activeChatReplyRequiredMessage = data.reply_required_message || "";
-    messageInput.disabled = activeChatBlocked || activeChatReplyRequired;
+    const inputDisabled = activeChatBlocked || activeChatReplyRequired;
+    messageInput.disabled = inputDisabled;
+    attachmentBtn.classList.toggle("uploading", inputDisabled);
     updateActiveChatHeader();
     if (data.active_thread?.id) {
         activeLLMThreadId = data.active_thread.id;
@@ -840,6 +890,44 @@ messageForm.addEventListener("submit", async (event) => {
         await loadMessages(activeThreadId);
     }
     await loadChats(activeThreadId);
+});
+attachmentInput.addEventListener("change", async () => {
+    const file = attachmentInput.files?.[0];
+    if (!file || !activeThreadId) {
+        attachmentInput.value = "";
+        return;
+    }
+    attachmentBtn.classList.add("uploading");
+    chatSubtitle.textContent = t("chat.uploading");
+    try {
+        const { response, data } = await sendAttachment(activeThreadId, file);
+        if (!response.ok) {
+            chatSubtitle.textContent = data.error || t("chat.attachmentFailed");
+            if (data.code === "chat blocked") {
+                activeChatBlocked = true;
+                activeChatBlockMessage = data.error || "";
+                messageInput.disabled = true;
+            }
+            else if (data.code === "chat reply required") {
+                activeChatReplyRequired = Boolean(data.reply_required);
+                activeChatReplyRequiredMessage = data.reply_required_message || data.error || "";
+                messageInput.disabled = true;
+            }
+            return;
+        }
+        activeChatReplyRequired = Boolean(data.reply_required);
+        activeChatReplyRequiredMessage = data.reply_required_message || "";
+        messageInput.disabled = activeChatBlocked || activeChatReplyRequired;
+        updateActiveChatHeader();
+        if (!wsConnected) {
+            await loadMessages(activeThreadId);
+        }
+        await loadChats(activeThreadId);
+    }
+    finally {
+        attachmentInput.value = "";
+        attachmentBtn.classList.remove("uploading");
+    }
 });
 chatRefreshBtn.addEventListener("click", async () => {
     await loadChats(activeThreadId);

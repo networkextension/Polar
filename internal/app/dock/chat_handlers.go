@@ -3,10 +3,15 @@ package dock
 import (
 	"errors"
 	"fmt"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -993,4 +998,169 @@ func (s *Server) handleChatDelete(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "已撤回"})
+}
+
+const (
+	chatAttachmentMaxImageSize = 10 << 20  // 10 MB
+	chatAttachmentMaxVideoSize = 100 << 20 // 100 MB
+	chatAttachmentMaxFileSize  = 50 << 20  // 50 MB
+)
+
+func (s *Server) handleChatSendAttachment(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	userIDStr, ok := userID.(string)
+	if !ok || userIDStr == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	threadID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || threadID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的会话"})
+		return
+	}
+
+	participant, err := s.isChatParticipant(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if !participant {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该会话"})
+		return
+	}
+
+	blocked, blockMessage, isImplicitFriend, replyRequired, replyRequiredMessage, err := s.getChatInteractionState(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	if blocked {
+		c.JSON(http.StatusForbidden, gin.H{"error": blockMessage, "code": "chat blocked"})
+		return
+	}
+	if replyRequired {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":                  replyRequiredMessage,
+			"code":                   errChatReplyRequired.Error(),
+			"is_implicit_friend":     isImplicitFriend,
+			"reply_required":         true,
+			"reply_required_message": replyRequiredMessage,
+		})
+		return
+	}
+
+	if s.uploadDir == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "上传目录未配置"})
+		return
+	}
+
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择要发送的文件"})
+		return
+	}
+
+	mimeType := file.Header.Get("Content-Type")
+	isImage := strings.HasPrefix(mimeType, "image/")
+	isVideo := strings.HasPrefix(mimeType, "video/")
+
+	maxSize := int64(chatAttachmentMaxFileSize)
+	if isImage {
+		maxSize = chatAttachmentMaxImageSize
+	} else if isVideo {
+		maxSize = chatAttachmentMaxVideoSize
+	}
+	if file.Size > maxSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("文件大小超过限制（最大 %d MB）", maxSize>>20)})
+		return
+	}
+
+	if err := os.MkdirAll(s.uploadDir, 0o755); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	filename := "chat_" + buildUploadFilename(file.Filename)
+	dstPath := filepath.Join(s.uploadDir, filename)
+	if err := c.SaveUploadedFile(file, dstPath); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "文件保存失败"})
+		return
+	}
+
+	publicURL := "/uploads/" + filename
+	att := ChatMessageAttachment{
+		URL:      publicURL,
+		FileName: file.Filename,
+		Size:     file.Size,
+		MimeType: mimeType,
+	}
+
+	if isImage {
+		if w, h, imgErr := readImageDimensions(dstPath); imgErr == nil {
+			att.Width = w
+			att.Height = h
+		}
+		imageItem, _, processErr := processUploadedPostImage(s.uploadDir, dstPath, publicURL, filename)
+		if processErr == nil && imageItem.SmallURL != "" {
+			att.ThumbnailURL = imageItem.SmallURL
+		}
+	}
+
+	preview := buildAttachmentPreview(att)
+	now := time.Now()
+	msgID, err := s.createAttachmentChatMessage(threadID, userIDStr, preview, att, now)
+	if err != nil {
+		_ = os.Remove(dstPath)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	isImplicitFriendAfterSend, replyRequiredAfterSend, replyRequiredMessageAfterSend, err := s.getChatReplyState(threadID, userIDStr)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+
+	s.publishChatInternalEvent(chatInternalEvent{
+		Event:     chatEventMessageCreated,
+		ChatID:    threadID,
+		MessageID: msgID,
+		SenderID:  userIDStr,
+	})
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message":                "发送成功",
+		"id":                     msgID,
+		"is_implicit_friend":     isImplicitFriendAfterSend,
+		"reply_required":         replyRequiredAfterSend,
+		"reply_required_message": replyRequiredMessageAfterSend,
+	})
+}
+
+func buildAttachmentPreview(att ChatMessageAttachment) string {
+	switch {
+	case strings.HasPrefix(att.MimeType, "image/"):
+		return "[图片]"
+	case strings.HasPrefix(att.MimeType, "video/"):
+		return "[视频]"
+	default:
+		if att.FileName != "" {
+			return "[文件: " + att.FileName + "]"
+		}
+		return "[附件]"
+	}
+}
+
+func readImageDimensions(path string) (int, int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+	cfg, _, err := image.DecodeConfig(f)
+	if err != nil {
+		return 0, 0, err
+	}
+	return cfg.Width, cfg.Height, nil
 }
