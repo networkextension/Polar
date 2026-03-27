@@ -352,7 +352,6 @@ func (s *Server) registerRoutes() {
 		api.GET("/chats/:id/messages", s.AuthMiddleware(), s.handleChatMessages)
 		api.POST("/chats/:id/messages", s.AuthMiddleware(), s.handleChatSend)
 		api.POST("/chats/:id/messages/attachment", s.AuthMiddleware(), s.handleChatSendAttachment)
-		api.GET("/chat-files/:filename", s.AuthMiddleware(), s.handleChatFileProxy)
 		api.POST("/chats/:id/messages/:messageId/retry", s.AuthMiddleware(), s.handleChatRetry)
 		api.GET("/chats/:id/messages/:messageId/markdown", s.AuthMiddleware(), s.handleChatSharedMarkdown)
 		api.DELETE("/chats/:id/messages/:messageId", s.AuthMiddleware(), s.handleChatDelete)

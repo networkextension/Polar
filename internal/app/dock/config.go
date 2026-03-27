@@ -46,13 +46,11 @@ type Config struct {
 	ApplePushTeamIDProd string
 
 	// Cloudflare R2 object storage for chat attachments (optional).
-	// R2 is enabled when the four required fields are set; PublicURL is optional.
-	//   - Without PublicURL: files are proxied via /chat-files/:filename (private bucket OK).
-	//   - With PublicURL:    files are served directly from the CDN URL (bucket must be public).
-	// If any required field is missing the server falls back to local filesystem storage.
-	CloudflareR2AccountID       string // required: Cloudflare account ID
-	CloudflareR2AccessKeyID     string // required: R2 access key ID
-	CloudflareR2SecretAccessKey string // required: R2 secret access key
-	CloudflareR2Bucket          string // required: R2 bucket name
-	CloudflareR2PublicURL       string // optional: CDN base URL, e.g. https://pub-xxx.r2.dev
+	// When all five fields are set, chat files are stored in R2.
+	// Otherwise the server falls back to local filesystem storage.
+	CloudflareR2AccountID      string // Cloudflare account ID
+	CloudflareR2AccessKeyID    string // R2 access key ID
+	CloudflareR2SecretAccessKey string // R2 secret access key
+	CloudflareR2Bucket         string // R2 bucket name
+	CloudflareR2PublicURL      string // public base URL, e.g. https://pub-xxx.r2.dev
 }
