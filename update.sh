@@ -19,6 +19,8 @@ if [ "$OS" = "darwin" ]; then
   OS="darwin"
 elif [ "$OS" = "linux" ]; then
   OS="linux"
+elif [ "$OS" = "freebsd" ]; then
+  OS="freebsd"
 else
   echo "Unsupported OS: $OS" >&2
   exit 1
@@ -45,7 +47,11 @@ if [ -z "$latest_info" ]; then
   echo "Failed to fetch latest release info" >&2
   exit 1
 fi
-latest_tag=$(echo "$latest_info" | grep -oP '"tag_name"\s*:\s*"\K[^\"]+')
+# Replace the problematic lines with portable sed-based extraction
+if [ "$OS" = "darwin" ] || [ "$OS" = "linux" ] || [ "$OS" = "freebsd" ]; then
+  grepcmd='sed -n '\''s/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'\'''
+fi
+latest_tag=$(echo "$latest_info" | eval "$grepcmd")
 latest_version="${latest_tag#v}"
 
 echo "remote latest: $latest_tag ($latest_version)"
@@ -73,7 +79,7 @@ if ver_ge "$local_version" "$latest_version"; then
 fi
 
 asset_name="${BIN_PREFIX}-${latest_tag}-${OS}-${ARCH}.tar.gz"
-download_url=$(echo "$latest_info" | grep -oP '"browser_download_url"\s*:\s*"\K[^\"]+' | grep "/${asset_name}$" | head -n1)
+download_url=$(echo "$latest_info" | grep '"browser_download_url"' | grep "${asset_name}" | sed 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
 if [ -z "$download_url" ]; then
   echo "No asset found for ${asset_name}" >&2
   exit 1
@@ -83,7 +89,7 @@ mkdir -p "$DOWNLOAD_DIR"
 output_file="$DOWNLOAD_DIR/${asset_name}"
 
 echo "Downloading $download_url to $output_file"
-wget -qO "$output_file" "$download_url"
+curl -L -o "$output_file" "$download_url"
 
 if [ ! -f "$output_file" ]; then
   echo "Download failed" >&2
@@ -92,5 +98,8 @@ fi
 
 echo "Extracting to ${LOCAL_DIR}"
 tar -xzf "$output_file" -C "$LOCAL_DIR"
+
+# Cleanup
+rm -rf "$DOWNLOAD_DIR"
 
 echo "Done: ${latest_tag} (${OS}/${ARCH})"

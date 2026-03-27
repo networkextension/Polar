@@ -110,7 +110,9 @@ jobs:
           PKG_DIR="dist/${VERSION}/${{ matrix.os }}_${{ matrix.arch }}"
           mkdir -p "$PKG_DIR"
           mv "$BINARY_NAME" "$PKG_DIR/"
-          cp LICENSE README.md "$PKG_DIR/" || true
+          cp LICENSE README.md update.sh "$PKG_DIR/" || true
+          cp scripts/db_init.sql "$PKG_DIR/" || true
+          cp -r migrations "$PKG_DIR/" || true
           # Include UI if built
           if [ -d "ui/dist" ]; then
             cp -r "ui/dist" "$PKG_DIR/ui"

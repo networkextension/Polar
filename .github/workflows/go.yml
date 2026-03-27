@@ -29,3 +29,20 @@ jobs:
 
     - name: Test
       run: go test -v ./...
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: UI install
+      working-directory: ui
+      run: npm ci
+
+    - name: UI build
+      working-directory: ui
+      run: npm run build
+
+    - name: UI test
+      working-directory: ui
+      run: npm test
