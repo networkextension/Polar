@@ -26,17 +26,18 @@ var (
 )
 
 type User struct {
-	ID         string     `json:"id"`
-	Username   string     `json:"username"`
-	Email      string     `json:"email"`
-	Password   string     `json:"-"` // password_hash
-	Role       string     `json:"role"`
-	Bio        string     `json:"bio"`
-	IconURL    string     `json:"icon_url"`
-	IsOnline   bool       `json:"is_online"`
-	DeviceType string     `json:"device_type"`
-	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID            string     `json:"id"`
+	Username      string     `json:"username"`
+	Email         string     `json:"email"`
+	EmailVerified bool       `json:"email_verified"`
+	Password      string     `json:"-"` // password_hash
+	Role          string     `json:"role"`
+	Bio           string     `json:"bio"`
+	IconURL       string     `json:"icon_url"`
+	IsOnline      bool       `json:"is_online"`
+	DeviceType    string     `json:"device_type"`
+	LastSeenAt    *time.Time `json:"last_seen_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
 }
 
 type Session struct {
@@ -886,9 +887,9 @@ func (s *Server) getUserByEmail(email string) (*User, error) {
 	var user User
 	var lastSeenAt sql.NullTime
 	err := s.db.QueryRow(
-		`SELECT id, username, email, password_hash, role, bio, icon_url, is_online, last_active_device_type, last_seen_at, created_at FROM users WHERE email = $1`,
+		`SELECT id, username, email, email_verified, password_hash, role, bio, icon_url, is_online, last_active_device_type, last_seen_at, created_at FROM users WHERE email = $1`,
 		email,
-	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.Role, &user.Bio, &user.IconURL, &user.IsOnline, &user.DeviceType, &lastSeenAt, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.EmailVerified, &user.Password, &user.Role, &user.Bio, &user.IconURL, &user.IsOnline, &user.DeviceType, &lastSeenAt, &user.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -905,9 +906,9 @@ func (s *Server) getUserByID(userID string) (*User, error) {
 	var user User
 	var lastSeenAt sql.NullTime
 	err := s.db.QueryRow(
-		`SELECT id, username, email, password_hash, role, bio, icon_url, is_online, last_active_device_type, last_seen_at, created_at FROM users WHERE id = $1`,
+		`SELECT id, username, email, email_verified, password_hash, role, bio, icon_url, is_online, last_active_device_type, last_seen_at, created_at FROM users WHERE id = $1`,
 		userID,
-	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.Role, &user.Bio, &user.IconURL, &user.IsOnline, &user.DeviceType, &lastSeenAt, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.EmailVerified, &user.Password, &user.Role, &user.Bio, &user.IconURL, &user.IsOnline, &user.DeviceType, &lastSeenAt, &user.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -924,9 +925,9 @@ func (s *Server) getUserByUsername(username string) (*User, error) {
 	var user User
 	var lastSeenAt sql.NullTime
 	err := s.db.QueryRow(
-		`SELECT id, username, email, password_hash, role, bio, icon_url, is_online, last_active_device_type, last_seen_at, created_at FROM users WHERE username = $1`,
+		`SELECT id, username, email, email_verified, password_hash, role, bio, icon_url, is_online, last_active_device_type, last_seen_at, created_at FROM users WHERE username = $1`,
 		username,
-	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.Role, &user.Bio, &user.IconURL, &user.IsOnline, &user.DeviceType, &lastSeenAt, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.EmailVerified, &user.Password, &user.Role, &user.Bio, &user.IconURL, &user.IsOnline, &user.DeviceType, &lastSeenAt, &user.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

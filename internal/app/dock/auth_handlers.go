@@ -159,6 +159,15 @@ func (s *Server) handleMe(c *gin.Context) {
 		"user_id":  userID,
 		"username": username,
 		"role":     role,
+		"email": func() string {
+			if user != nil {
+				return user.Email
+			}
+			return ""
+		}(),
+		"email_verified": func() bool {
+			return user != nil && user.EmailVerified
+		}(),
 		"icon_url": func() string {
 			if user != nil {
 				return user.IconURL
