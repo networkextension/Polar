@@ -1,5 +1,5 @@
 import { makeDefaultAvatar } from "./avatar.js";
-import { applyI18n, injectLangToggle, t } from "./i18n.js";
+import { applyI18n, t } from "./i18n.js";
 
 type SiteSettings = {
   name?: string;
@@ -45,7 +45,6 @@ export function renderSiteBrand(site?: SiteSettings): void {
 
 export async function hydrateSiteBrand(): Promise<void> {
   applyI18n();
-  injectLangToggle();
 
   if (!document.querySelector("[data-site-brand]")) {
     return;
