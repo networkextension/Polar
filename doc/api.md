@@ -1500,6 +1500,9 @@ curl -X POST http://localhost:3000/api/posts \
 - AI agent 的长回复会先写入 `markdown_entries`，再作为 `shared_markdown` 消息返回聊天线程
 - AI 调用失败时，会写入一条 `failed = true` 的失败消息；客户端可调用重试接口重新投递上一条用户消息
 - 用户拉黑只影响普通用户私聊；历史消息仍可见，但不能继续发新消息
+- 普通用户与普通用户之间采用“隐式好友”机制，不需要单独好友申请
+- 在双方尚未成为隐式好友前，发起方只能先发一条消息，之后必须等待接收方回复
+- 接收方在同一会话内完成首次回复后，双方自动成为隐式好友；此后不再受“首条只能发一条”的限制
 
 ### AI 助理状态
 
@@ -1544,10 +1547,20 @@ curl -X POST http://localhost:3000/api/posts \
     "last_message": "[AI 文档回复]",
     "last_message_at": "2026-03-24T10:20:30+08:00",
     "created_at": "2026-03-24T09:00:00+08:00",
-    "unread_count": 0
+    "unread_count": 0,
+    "is_implicit_friend": true,
+    "reply_required": false,
+    "reply_required_message": ""
   }
 }
 ```
+
+补充说明：
+
+- `POST /api/chats/start` 只创建或获取会话，不代表双方已建立好友关系
+- `is_implicit_friend` 仅对普通用户私聊有意义；`system` / `bot user` 会话恒为 `true`
+- 当普通用户会话中双方都至少发送过一条未撤回消息后，`is_implicit_friend` 会变为 `true`
+- 空会话初次进入时 `reply_required = false`；只有你先发出首条消息后，才会进入等待对方回复状态
 
 若因拉黑被拒绝，返回 `403 Forbidden`：
 ```json
@@ -1584,7 +1597,10 @@ curl -X POST http://localhost:3000/api/posts \
       "last_message": "好的，收到",
       "last_message_at": "2026-03-24T09:50:00+08:00",
       "created_at": "2026-03-24T09:00:00+08:00",
-      "unread_count": 2
+      "unread_count": 2,
+      "is_implicit_friend": true,
+      "reply_required": false,
+      "reply_required_message": ""
     }
   ],
   "has_more": false,
@@ -1597,6 +1613,9 @@ curl -X POST http://localhost:3000/api/posts \
 - `other_user_online`：对方当前是否在线
 - `other_user_device_type`：对方最近活跃设备类型
 - `other_user_last_seen_at`：对方最近在线时间，可能为空
+- `is_implicit_friend`：普通用户会话是否已建立隐式好友关系
+- `reply_required`：当前用户是否需要等待对方回复后才能继续发送
+- `reply_required_message`：等待回复时的提示文案；为空表示当前可正常发送
 
 ### 获取 Bot 话题列表
 
@@ -1814,6 +1833,9 @@ curl -X POST http://localhost:3000/api/posts \
   },
   "active_thread_id": 21,
   "blocked": false,
+  "is_implicit_friend": true,
+  "reply_required": false,
+  "reply_required_message": "",
   "block_message": "",
   "has_more": false,
   "next_offset": 1
@@ -1831,6 +1853,9 @@ curl -X POST http://localhost:3000/api/posts \
 - `failed`：是否为失败态 AI 消息；通常只会出现在 `system` 或 `bot user` 回复失败时
 - `blocked`：当前会话是否已因拉黑而禁止继续发送
 - `block_message`：当前会话不可发送时的提示文案
+- `is_implicit_friend`：普通用户会话是否已建立隐式好友关系；AI 会话恒为 `true`
+- `reply_required`：普通用户会话当前是否必须等待对方回复
+- `reply_required_message`：等待对方回复时的提示文案
 
 当 `message_type = "shared_markdown"` 时：
 
@@ -1896,13 +1921,18 @@ curl -X POST http://localhost:3000/api/posts \
 - AI 会话传入 `llm_thread_id` 后，消息会进入指定话题
 - 若 `llm_thread_id` 对应话题标题仍是默认值“新话题”，服务端会在首轮消息后自动生成摘要标题
 - 若当前会话存在拉黑关系，历史消息仍可读取，但发送会被拒绝
-- 普通用户之间还受“一问一答”限制：对方未回复前不能连续发送多条
+- 普通用户之间采用“隐式好友”机制：首次接触时只能先发一条，对方未回复前不能继续发送
+- 当接收方在同一会话中完成首次回复后，双方建立隐式好友，后续消息不再受首次限制
+- `system` / `bot user` 会话不受隐式好友和首条等待规则限制
 
 成功响应：
 ```json
 {
   "message": "发送成功",
   "id": 88,
+  "is_implicit_friend": true,
+  "reply_required": false,
+  "reply_required_message": "",
   "active_thread": {
     "id": 21,
     "chat_thread_id": 12,
@@ -1920,7 +1950,10 @@ curl -X POST http://localhost:3000/api/posts \
 ```json
 {
   "error": "请等待对方回复后再发送消息",
-  "code": "chat reply required"
+  "code": "chat reply required",
+  "is_implicit_friend": false,
+  "reply_required": true,
+  "reply_required_message": "你已发送首条消息，请等待对方回复后再继续发送"
 }
 ```
 

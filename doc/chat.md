@@ -12,6 +12,10 @@
 - 未读数通过最后已读时间与消息时间计算。
 - WebSocket 负责实时推送，HTTP 作为兜底。
 - 支持用户级拉黑（block）；拉黑后历史消息仍可查看，但不能继续创建私聊或发送新消息。
+- 普通用户与普通用户之间采用“隐式好友”机制，不需要单独好友申请。
+- 在双方尚未成为隐式好友前，发起方只能先发一条消息，之后必须等待接收方回复。
+- 接收方在同一会话内完成首次回复后，双方自动成为隐式好友。
+- `system` 与 `bot user` 不受隐式好友和首条等待规则限制。
 
 ## 数据模型（服务端）
 chat_threads 字段：
@@ -41,6 +45,12 @@ user_blocks 字段：
 - `blocked_user_id` TEXT
 - `created_at` TIMESTAMPTZ
 
+隐式好友关系（推导状态）：
+- 不额外建表，直接由普通用户私聊历史推导。
+- 当同一 `chat_thread` 中，双方都至少存在一条未撤回消息时，视为已建立隐式好友关系。
+- 若只有一方发过消息，则该会话处于“等待对方回复”状态，不视为好友。
+- 若任一方拉黑，对应会话立即进入不可发送状态；隐式好友不提供额外豁免。
+
 ## 拉黑规则
 - 拉黑是用户与用户之间的单向关系，由 `user_blocks` 维护。
 - 如果 A 拉黑 B：
@@ -50,6 +60,14 @@ user_blocks 字段：
   - A 与 B 在已有私聊里都不能继续发送新消息。
 - `system` / bot 会话不受此规则影响。
 - 客户端进入历史会话后，应根据服务端返回的 `blocked` / `block_message` 禁用输入框，而不是只在发送时报错。
+
+## 隐式好友与首条消息规则
+- 仅适用于“普通用户 <-> 普通用户”私聊。
+- `POST /api/chats/start` 只负责创建或获取会话，不代表双方已成为好友。
+- 在双方尚未建立隐式好友前，发起方可以先发送一条首消息。
+- 如果当前会话最后一条未撤回消息仍然是自己发的，则不能继续发送，必须等待对方回复。
+- 客户端应根据接口返回的 `reply_required` / `reply_required_message` 展示等待态或失败提示。
+- 当接收方首次回消息后，双方成为隐式好友，后续不再受“首条只能发一条”的限制。
 
 ## 认证方式
 - 使用登录后 `SessionCookieName`（HTTP Cookie）认证。
@@ -75,13 +93,21 @@ user_blocks 字段：
       "last_message": "在吗？",
       "last_message_at": "2026-03-19T09:15:00+08:00",
       "created_at": "2026-03-19T09:00:00+08:00",
-      "unread_count": 2
+      "unread_count": 2,
+      "is_implicit_friend": true,
+      "reply_required": false,
+      "reply_required_message": ""
     }
   ],
   "has_more": false,
   "next_offset": 1
 }
 ```
+
+字段补充：
+- `is_implicit_friend`：当前普通用户会话是否已建立隐式好友关系
+- `reply_required`：当前用户是否必须等待对方回复后才能继续发送
+- `reply_required_message`：对应提示文案；为空表示当前可正常发送
 
 ### 2. 创建/获取会话
 `POST /api/chats/start`
@@ -101,10 +127,18 @@ user_blocks 字段：
     "last_message": "",
     "last_message_at": null,
     "created_at": "2026-03-19T09:00:00+08:00",
-    "unread_count": 0
+    "unread_count": 0,
+    "is_implicit_friend": false,
+    "reply_required": false,
+    "reply_required_message": ""
   }
 }
 ```
+
+补充说明：
+- 新创建的普通用户会话默认 `is_implicit_friend = false`
+- 只有双方都至少发出一条未撤回消息后，才会变为 `true`
+- 空会话初次进入时 `reply_required = false`
 
 如果双方存在拉黑关系，返回 `403 Forbidden`：
 ```json
@@ -149,6 +183,9 @@ user_blocks 字段：
     }
   ],
   "blocked": false,
+  "is_implicit_friend": false,
+  "reply_required": true,
+  "reply_required_message": "你已发送首条消息，请等待对方回复后再继续发送",
   "block_message": "",
   "has_more": false,
   "next_offset": 2
@@ -158,13 +195,17 @@ user_blocks 字段：
 字段补充：
 - `blocked`：当前会话是否因拉黑而禁止继续发送
 - `block_message`：对应的提示文案；若为空，表示当前会话可正常发送
+- `is_implicit_friend`：当前普通用户会话是否已建立隐式好友关系
+- `reply_required`：当前是否处于“等待对方回复”状态
+- `reply_required_message`：等待回复时的提示文案；为空表示当前无需等待
 
 ### 4. 发送消息
 `POST /api/chats/:id/messages`
 
 发送限制：
-- 普通用户与普通用户的私聊，遵循一问一答节奏。
-- 如果当前会话最后一条未撤回消息就是你发的，则下一条会被拒绝，需等待对方先回复。
+- 普通用户与普通用户的私聊，首次接触遵循“先发一条，等待对方回复”的节奏。
+- 如果双方尚未建立隐式好友，且当前会话最后一条未撤回消息就是你发的，则下一条会被拒绝。
+- 一旦对方在该会话中回复过一次，双方建立隐式好友，后续消息不再受上述首次限制。
 - 如果当前会话任一方存在拉黑关系，则历史仍可见，但发送会被拒绝。
 - 对 `system` 和 bot 会话不生效，它们仍可连续发送。
 
@@ -182,7 +223,10 @@ user_blocks 字段：
 ```json
 {
   "error": "请等待对方回复后再发送消息",
-  "code": "chat reply required"
+  "code": "chat reply required",
+  "is_implicit_friend": false,
+  "reply_required": true,
+  "reply_required_message": "你已发送首条消息，请等待对方回复后再继续发送"
 }
 ```
 
