@@ -223,17 +223,20 @@ type ChatThread struct {
 }
 
 type ChatSummary struct {
-	ID                  int64      `json:"id"`
-	OtherUserID         string     `json:"other_user_id"`
-	OtherUsername       string     `json:"other_username"`
-	OtherUserIcon       string     `json:"other_user_icon"`
-	OtherUserOnline     bool       `json:"other_user_online"`
-	OtherUserDeviceType string     `json:"other_user_device_type"`
-	OtherUserLastSeenAt *time.Time `json:"other_user_last_seen_at,omitempty"`
-	LastMessage         string     `json:"last_message"`
-	LastMessageAt       *time.Time `json:"last_message_at,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UnreadCount         int        `json:"unread_count"`
+	ID                   int64      `json:"id"`
+	OtherUserID          string     `json:"other_user_id"`
+	OtherUsername        string     `json:"other_username"`
+	OtherUserIcon        string     `json:"other_user_icon"`
+	OtherUserOnline      bool       `json:"other_user_online"`
+	OtherUserDeviceType  string     `json:"other_user_device_type"`
+	OtherUserLastSeenAt  *time.Time `json:"other_user_last_seen_at,omitempty"`
+	LastMessage          string     `json:"last_message"`
+	LastMessageAt        *time.Time `json:"last_message_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UnreadCount          int        `json:"unread_count"`
+	IsImplicitFriend     bool       `json:"is_implicit_friend"`
+	ReplyRequired        bool       `json:"reply_required"`
+	ReplyRequiredMessage string     `json:"reply_required_message"`
 }
 
 type ChatMessage struct {
@@ -3347,6 +3350,15 @@ func (s *Server) listChatThreads(userID string, limit, offset int) ([]ChatSummar
 		hasMore = true
 		threads = threads[:limit]
 	}
+	for i := range threads {
+		isImplicitFriend, replyRequired, replyRequiredMessage, err := s.getChatReplyState(threads[i].ID, userID)
+		if err != nil {
+			return nil, false, err
+		}
+		threads[i].IsImplicitFriend = isImplicitFriend
+		threads[i].ReplyRequired = replyRequired
+		threads[i].ReplyRequiredMessage = replyRequiredMessage
+	}
 	return threads, hasMore, nil
 }
 
@@ -3405,6 +3417,13 @@ func (s *Server) getChatSummary(userID string, threadID int64) (*ChatSummary, er
 	if otherUserLastSeenAt.Valid {
 		summary.OtherUserLastSeenAt = &otherUserLastSeenAt.Time
 	}
+	isImplicitFriend, replyRequired, replyRequiredMessage, err := s.getChatReplyState(threadID, userID)
+	if err != nil {
+		return nil, err
+	}
+	summary.IsImplicitFriend = isImplicitFriend
+	summary.ReplyRequired = replyRequired
+	summary.ReplyRequiredMessage = replyRequiredMessage
 	return &summary, nil
 }
 
@@ -3550,6 +3569,21 @@ func (s *Server) getChatCounterparty(threadID int64, userID string) (string, err
 	}
 }
 
+func (s *Server) getChatImplicitFriendState(threadID int64) (bool, error) {
+	var distinctSenders int
+	err := s.db.QueryRow(
+		`SELECT COUNT(DISTINCT sender_id)
+		   FROM chat_messages
+		  WHERE thread_id = $1
+		    AND deleted_at IS NULL`,
+		threadID,
+	).Scan(&distinctSenders)
+	if err != nil {
+		return false, err
+	}
+	return distinctSenders >= 2, nil
+}
+
 func (s *Server) getLastUndeletedChatMessageSender(threadID int64) (string, error) {
 	var senderID string
 	err := s.db.QueryRow(
@@ -3568,6 +3602,33 @@ func (s *Server) getLastUndeletedChatMessageSender(threadID int64) (string, erro
 		return "", err
 	}
 	return senderID, nil
+}
+
+func (s *Server) getChatReplyState(threadID int64, userID string) (bool, bool, string, error) {
+	responderUserID, err := s.getAIResponderForChat(threadID, userID)
+	if err != nil {
+		return false, false, "", err
+	}
+	if responderUserID != "" {
+		return true, false, "", nil
+	}
+
+	isImplicitFriend, err := s.getChatImplicitFriendState(threadID)
+	if err != nil {
+		return false, false, "", err
+	}
+	if isImplicitFriend {
+		return true, false, "", nil
+	}
+
+	lastSenderID, err := s.getLastUndeletedChatMessageSender(threadID)
+	if err != nil {
+		return false, false, "", err
+	}
+	if lastSenderID == userID {
+		return false, true, "你已发送首条消息，请等待对方回复后再继续发送", nil
+	}
+	return false, false, "", nil
 }
 
 func (s *Server) listLLMThreads(chatThreadID int64, ownerUserID string) ([]LLMThread, error) {

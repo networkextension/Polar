@@ -42,6 +42,8 @@ let currentLLMConfigs: ChatLLMConfig[] = [];
 let activeChatSummary: ChatSummary | null = null;
 let activeChatBlocked = false;
 let activeChatBlockMessage = "";
+let activeChatReplyRequired = false;
+let activeChatReplyRequiredMessage = "";
 const expandedMarkdownMessages = new Set<string>();
 const sharedMarkdownContentCache = new Map<string, string>();
 const sharedMarkdownLoading = new Set<string>();
@@ -131,6 +133,8 @@ function updateActiveChatHeader(): void {
   chatTitle.textContent = chat.other_username;
   chatSubtitle.textContent = activeChatBlocked && activeChatBlockMessage
     ? activeChatBlockMessage
+    : activeChatReplyRequired && activeChatReplyRequiredMessage
+      ? activeChatReplyRequiredMessage
     : formatPresence(chat);
 }
 
@@ -671,7 +675,9 @@ async function loadMessages(threadId: string): Promise<void> {
   }
   activeChatBlocked = Boolean(data.blocked);
   activeChatBlockMessage = data.block_message || "";
-  messageInput.disabled = activeChatBlocked;
+  activeChatReplyRequired = Boolean(data.reply_required);
+  activeChatReplyRequiredMessage = data.reply_required_message || "";
+  messageInput.disabled = activeChatBlocked || activeChatReplyRequired;
   updateActiveChatHeader();
   if (data.active_thread?.id) {
     activeLLMThreadId = data.active_thread.id;
@@ -695,6 +701,8 @@ async function openChat(chat: ChatSummary): Promise<void> {
   activeChatSummary = chat;
   activeChatBlocked = false;
   activeChatBlockMessage = "";
+  activeChatReplyRequired = false;
+  activeChatReplyRequiredMessage = "";
   activeMessageLoadedAt = "";
   activeLLMThreadId = null;
   updateActiveChatHeader();
@@ -869,11 +877,18 @@ messageForm.addEventListener("submit", async (event) => {
       activeChatBlocked = true;
       activeChatBlockMessage = data.error || "";
       messageInput.disabled = true;
+    } else if (data.code === "chat reply required") {
+      activeChatReplyRequired = Boolean(data.reply_required);
+      activeChatReplyRequiredMessage = data.reply_required_message || data.error || "";
+      messageInput.disabled = true;
     }
     return;
   }
 
   messageInput.value = "";
+  activeChatReplyRequired = Boolean(data.reply_required);
+  activeChatReplyRequiredMessage = data.reply_required_message || "";
+  messageInput.disabled = activeChatBlocked || activeChatReplyRequired;
   updateActiveChatHeader();
   if (!wsConnected) {
     await loadMessages(activeThreadId);

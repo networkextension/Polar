@@ -36,6 +36,18 @@ func (s *Server) getChatBlockStatus(threadID int64, userID string) (bool, string
 	}
 }
 
+func (s *Server) getChatInteractionState(threadID int64, userID string) (bool, string, bool, bool, string, error) {
+	blocked, blockMessage, err := s.getChatBlockStatus(threadID, userID)
+	if err != nil {
+		return false, "", false, false, "", err
+	}
+	isImplicitFriend, replyRequired, replyRequiredMessage, err := s.getChatReplyState(threadID, userID)
+	if err != nil {
+		return false, "", false, false, "", err
+	}
+	return blocked, blockMessage, isImplicitFriend, replyRequired, replyRequiredMessage, nil
+}
+
 func (s *Server) handleChatList(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	userIDStr, ok := userID.(string)
@@ -202,7 +214,7 @@ func (s *Server) handleChatMessages(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
 	}
-	blocked, blockMessage, err := s.getChatBlockStatus(threadID, userIDStr)
+	blocked, blockMessage, isImplicitFriend, replyRequired, replyRequiredMessage, err := s.getChatInteractionState(threadID, userIDStr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
@@ -230,12 +242,15 @@ func (s *Server) handleChatMessages(c *gin.Context) {
 
 	nextOffset := offset + len(messages)
 	c.JSON(http.StatusOK, gin.H{
-		"messages":      messages,
-		"has_more":      hasMore,
-		"next_offset":   nextOffset,
-		"blocked":       blocked,
-		"block_message": blockMessage,
-		"active_thread": activeLLMThread,
+		"messages":               messages,
+		"has_more":               hasMore,
+		"next_offset":            nextOffset,
+		"blocked":                blocked,
+		"is_implicit_friend":     isImplicitFriend,
+		"reply_required":         replyRequired,
+		"reply_required_message": replyRequiredMessage,
+		"block_message":          blockMessage,
+		"active_thread":          activeLLMThread,
 		"active_thread_id": func() any {
 			if llmThreadID == nil {
 				return nil
@@ -566,7 +581,7 @@ func (s *Server) handleChatSend(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "内容不能为空"})
 		return
 	}
-	blocked, blockMessage, err := s.getChatBlockStatus(threadID, userIDStr)
+	blocked, blockMessage, isImplicitFriend, replyRequired, replyRequiredMessage, err := s.getChatInteractionState(threadID, userIDStr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
@@ -576,24 +591,15 @@ func (s *Server) handleChatSend(c *gin.Context) {
 		return
 	}
 
-	responderUserID, err := s.getAIResponderForChat(threadID, userIDStr)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+	if replyRequired {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":                  replyRequiredMessage,
+			"code":                   errChatReplyRequired.Error(),
+			"is_implicit_friend":     isImplicitFriend,
+			"reply_required":         true,
+			"reply_required_message": replyRequiredMessage,
+		})
 		return
-	}
-	if responderUserID == "" {
-		lastSenderID, err := s.getLastUndeletedChatMessageSender(threadID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
-			return
-		}
-		if lastSenderID == userIDStr {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "请等待对方回复后再发送消息",
-				"code":  errChatReplyRequired.Error(),
-			})
-			return
-		}
 	}
 
 	llmThreadID, activeLLMThread, err := s.resolveChatLLMThread(threadID, userIDStr, func() string {
@@ -610,6 +616,11 @@ func (s *Server) handleChatSend(c *gin.Context) {
 	username, _ := c.Get("username")
 	senderName, _ := username.(string)
 	msgID, err := s.sendChatMessage(threadID, llmThreadID, userIDStr, senderName, content, time.Now())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
+	isImplicitFriendAfterSend, replyRequiredAfterSend, replyRequiredMessageAfterSend, err := s.getChatReplyState(threadID, userIDStr)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
@@ -646,9 +657,12 @@ func (s *Server) handleChatSend(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message":       "发送成功",
-		"id":            msgID,
-		"active_thread": activeLLMThread,
+		"message":                "发送成功",
+		"id":                     msgID,
+		"active_thread":          activeLLMThread,
+		"is_implicit_friend":     isImplicitFriendAfterSend,
+		"reply_required":         replyRequiredAfterSend,
+		"reply_required_message": replyRequiredMessageAfterSend,
 	})
 }
 

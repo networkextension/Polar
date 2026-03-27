@@ -9,6 +9,9 @@ export type ChatSummary = {
   unread_count?: number;
   last_message?: string;
   last_message_at?: string;
+  is_implicit_friend?: boolean;
+  reply_required?: boolean;
+  reply_required_message?: string;
 };
 
 export type ChatListResponse = {
@@ -41,6 +44,9 @@ export type ChatMessagesResponse = {
   active_thread_id?: number;
   blocked?: boolean;
   block_message?: string;
+  is_implicit_friend?: boolean;
+  reply_required?: boolean;
+  reply_required_message?: string;
 };
 
 export type LLMThread = {
@@ -84,6 +90,9 @@ export type SendMessageResponse = {
   error?: string;
   code?: string;
   active_thread?: LLMThread;
+  is_implicit_friend?: boolean;
+  reply_required?: boolean;
+  reply_required_message?: string;
 };
 
 export type SharedMarkdownResponse = {
