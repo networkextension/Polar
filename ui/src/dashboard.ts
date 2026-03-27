@@ -82,10 +82,6 @@ const settingsCardName = byId<HTMLElement>("settingsCardName");
 const settingsCardMeta = byId<HTMLElement>("settingsCardMeta");
 const dashboardRoleBadge = byId<HTMLElement>("dashboardRoleBadge");
 const settingsCardRoleBadge = byId<HTMLElement>("settingsCardRoleBadge");
-const siteManageCard = byId<HTMLElement>("siteManageCard");
-const siteManageCardIcon = byId<HTMLImageElement>("siteManageCardIcon");
-const siteManageCardName = byId<HTMLElement>("siteManageCardName");
-const siteManageCardMeta = byId<HTMLElement>("siteManageCardMeta");
 const settingsProfileName = byId<HTMLElement>("settingsProfileName");
 const settingsProfileMeta = byId<HTMLElement>("settingsProfileMeta");
 const settingsProfileRoleBadge = byId<HTMLElement>("settingsProfileRoleBadge");
@@ -365,9 +361,6 @@ function renderSiteSettings(site?: SiteSettings): void {
   siteNameInput.value = safeSite.name || "Polar-";
   siteDescriptionInput.value = safeSite.description || "";
   siteIconPreview.src = safeSite.icon_url || defaultSiteIcon(safeSite.name || "Polar-");
-  siteManageCardIcon.src = safeSite.icon_url || defaultSiteIcon(safeSite.name || "站");
-  siteManageCardName.textContent = safeSite.name || "站点管理";
-  siteManageCardMeta.textContent = safeSite.description || "维护站点信息、证书与 Tag";
   applePushDevMeta.textContent = formatCertificateMeta(safeSite.apple_push_dev_cert);
   applePushProdMeta.textContent = formatCertificateMeta(safeSite.apple_push_prod_cert);
   applePushDevDeleteBtn.disabled = !safeSite.apple_push_dev_cert?.file_url;
@@ -554,7 +547,6 @@ async function loadProfile(): Promise<void> {
   addTagBtn.disabled = !isAdmin;
   addTagBtn.textContent = isAdmin ? t("dashboard.newTag") : t("dashboard.adminOnlyTag");
   addTagBtn.hidden = !isAdmin;
-  siteManageCard.hidden = !isAdmin;
   siteAdminPanel.hidden = !isAdmin;
   settingsNavButtons.forEach((button) => {
     if (button.dataset.settingsNav === "site") {

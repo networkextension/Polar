@@ -89,7 +89,7 @@ body.modal-open {
   gap: 14px;
   width: 100%;
   padding: 14px 16px;
-  margin-bottom: 16px;
+  margin-bottom: 10px;
   text-decoration: none;
   color: var(--text);
   background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
@@ -1747,6 +1747,10 @@ textarea {
   min-height: calc(100vh - 110px);
 }
 
+.chat-page .dashboard-header {
+  margin-bottom: 10px;
+}
+
 .chat-layout {
   display: grid;
   grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
@@ -1780,9 +1784,16 @@ textarea {
   background: var(--surface);
   color: var(--text);
   padding: 12px 14px;
-  border-radius: 12px;
+  border-radius: 14px;
   cursor: pointer;
-  transition: border 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease, background 0.2s ease;
+}
+
+.chat-item:hover {
+  border-color: var(--active-border);
+  background: var(--surface-strong);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px var(--active-shadow);
 }
 
 .chat-item-header {
@@ -1818,6 +1829,19 @@ textarea {
   gap: 8px;
   color: var(--muted);
   font-size: 12px;
+  overflow: hidden;
+}
+
+.chat-item-meta > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.chat-item-meta > span:last-child {
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .chat-thread {
@@ -1906,17 +1930,17 @@ textarea {
 .message-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   flex: 1;
   min-height: 320px;
   overflow-y: auto;
-  padding-right: 6px;
+  padding: 4px 8px 4px 4px;
 }
 
 .message-item {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
 .message-item.mine {
@@ -1952,21 +1976,24 @@ textarea {
 }
 
 .avatar-xs {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   object-fit: cover;
   border: 1px solid var(--border);
   background: rgba(56, 189, 248, 0.2);
+  flex-shrink: 0;
 }
 
 .message-bubble {
-  padding: 10px 12px;
-  border-radius: 12px;
+  padding: 10px 14px;
+  border-radius: 18px;
+  border-bottom-left-radius: 4px;
   max-width: 70%;
   background: var(--surface-strong);
   border: 1px solid var(--border);
-  line-height: 1.5;
+  line-height: 1.55;
+  font-size: 14px;
 }
 
 .message-bubble.deleted {
@@ -1980,9 +2007,15 @@ textarea {
   gap: 8px;
 }
 
+.message-row:hover .message-revoke {
+  opacity: 1;
+}
+
 .message-item.mine .message-bubble {
-  background: rgba(56, 189, 248, 0.18);
-  border-color: rgba(56, 189, 248, 0.35);
+  background: var(--active-bg);
+  border-color: var(--active-border);
+  border-bottom-left-radius: 18px;
+  border-bottom-right-radius: 4px;
 }
 
 .message-bubble-content {
@@ -2036,16 +2069,20 @@ textarea {
 
 .message-revoke {
   width: auto;
-  padding: 6px 10px;
+  padding: 5px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
   background: var(--secondary-bg);
-  color: var(--text);
+  color: var(--muted);
   box-shadow: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  flex-shrink: 0;
 }
 
 .message-revoke:hover {
-  box-shadow: 0 8px 18px var(--secondary-shadow);
+  color: var(--text);
+  box-shadow: 0 4px 12px var(--secondary-shadow);
 }
 
 .message-markdown-card {
@@ -2089,9 +2126,13 @@ textarea {
 
 .message-form {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   margin-top: auto;
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
 }
 
 .message-attach-btn {
@@ -2099,7 +2140,10 @@ textarea {
   flex-shrink: 0;
   user-select: none;
   font-size: 16px;
-  padding: 6px 10px;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 999px;
 }
 
 .message-attach-btn.uploading {
@@ -2160,6 +2204,16 @@ textarea {
 .message-input {
   flex: 1;
   margin-bottom: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 6px 4px;
+}
+
+.message-input:focus {
+  outline: none;
+  box-shadow: none;
+  border: none;
 }
 
 .chat-empty {
@@ -2172,14 +2226,14 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
   border-radius: 999px;
-  background: rgba(239, 68, 68, 0.2);
-  color: #fecaca;
-  font-size: 12px;
-  font-weight: 600;
+  background: rgba(239, 68, 68, 0.85);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 @media (max-width: 920px) {
