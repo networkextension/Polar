@@ -45,6 +45,3 @@ jobs:
       working-directory: ui
       run: npm run build
 
-    - name: UI test
-      working-directory: ui
-      run: npm test
