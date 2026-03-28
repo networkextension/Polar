@@ -44,13 +44,20 @@ type Config struct {
 	ApplePushTeamID     string
 	ApplePushTeamIDDev  string
 	ApplePushTeamIDProd string
+	PublicBaseURL       string
+	SMTPHost            string
+	SMTPPort            int
+	SMTPUsername        string
+	SMTPPassword        string
+	SMTPFromEmail       string
+	SMTPFromName        string
 
 	// Cloudflare R2 object storage for chat attachments (optional).
 	// When all five fields are set, chat files are stored in R2.
 	// Otherwise the server falls back to local filesystem storage.
-	CloudflareR2AccountID      string // Cloudflare account ID
-	CloudflareR2AccessKeyID    string // R2 access key ID
+	CloudflareR2AccountID       string // Cloudflare account ID
+	CloudflareR2AccessKeyID     string // R2 access key ID
 	CloudflareR2SecretAccessKey string // R2 secret access key
-	CloudflareR2Bucket         string // R2 bucket name
-	CloudflareR2PublicURL      string // public base URL, e.g. https://pub-xxx.r2.dev
+	CloudflareR2Bucket          string // R2 bucket name
+	CloudflareR2PublicURL       string // public base URL, e.g. https://pub-xxx.r2.dev
 }

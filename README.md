@@ -215,6 +215,8 @@ Default UI address:
   - relying party ID for Passkey
 - `PASSKEY_RP_NAME`
   - relying party display name
+- `PUBLIC_BASE_URL`
+  - public base URL used to build email verification links, for example `https://polar.example.com`
 - `APPLE_PUSH_TOPIC`
   - default APNs topic, usually the iOS app bundle ID
 - `APPLE_PUSH_TOPIC_DEV`
@@ -233,6 +235,42 @@ Default UI address:
   - sandbox APNs team ID, overrides `APPLE_PUSH_TEAM_ID`
 - `APPLE_PUSH_TEAM_ID_PROD`
   - production APNs team ID, overrides `APPLE_PUSH_TEAM_ID`
+- `SMTP_HOST`
+  - SMTP server hostname, for example `smtp.mail.me.com`
+- `SMTP_PORT`
+  - SMTP server port, iCloud app-specific password typically uses `587`
+- `SMTP_USERNAME`
+  - SMTP login username, for iCloud usually your full iCloud email address
+- `SMTP_PASSWORD`
+  - SMTP login password, supports iCloud App-Specific Password
+- `SMTP_FROM_EMAIL`
+  - sender email address shown in outgoing verification emails
+- `SMTP_FROM_NAME`
+  - optional sender display name
+
+### iCloud SMTP Example
+
+```bash
+export PUBLIC_BASE_URL="https://polar.example.com"
+export SMTP_HOST="smtp.mail.me.com"
+export SMTP_PORT="587"
+export SMTP_USERNAME="yourname@icloud.com"
+export SMTP_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+export SMTP_FROM_EMAIL="yourname@icloud.com"
+export SMTP_FROM_NAME="Polar-"
+```
+
+After configuration, authenticated users can call:
+
+```text
+POST /api/email-verification/send
+```
+
+The verification email link points to:
+
+```text
+GET /api/email-verification/verify?token=...
+```
 
 ## GeoLite Setup
 

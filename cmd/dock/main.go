@@ -18,6 +18,15 @@ func main() {
 		redisDB = parsed
 	}
 
+	smtpPort := 587
+	if value := os.Getenv("SMTP_PORT"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			log.Fatalf("invalid SMTP_PORT: %v", err)
+		}
+		smtpPort = parsed
+	}
+
 	cfg := dock.Config{
 		Addr:                envOrDefault("ADDR", dock.DefaultAddr),
 		PostgresDSN:         envOrDefault("POSTGRES_DSN", dock.DefaultPostgresDSN),
@@ -31,6 +40,7 @@ func main() {
 		PasskeyRPID:         envOrDefault("PASSKEY_RP_ID", dock.DefaultPasskeyRPID),
 		PasskeyOrigin:       envOrDefault("PASSKEY_ORIGIN", dock.DefaultPasskeyOrigin),
 		PasskeyRPName:       envOrDefault("PASSKEY_RP_NAME", dock.DefaultPasskeyRPName),
+		PublicBaseURL:       envOrDefault("PUBLIC_BASE_URL", envOrDefault("PASSKEY_ORIGIN", dock.DefaultPasskeyOrigin)),
 		AIAgentAPIKey:       os.Getenv("AI_AGENT_API_KEY"),
 		AIAgentBaseURL:      envOrDefault("AI_AGENT_BASE_URL", "https://api.openai.com/v1/chat/completions"),
 		AIAgentModel:        envOrDefault("AI_AGENT_MODEL", "gpt-4.1-mini"),
@@ -44,6 +54,12 @@ func main() {
 		ApplePushTeamID:     os.Getenv("APPLE_PUSH_TEAM_ID"),
 		ApplePushTeamIDDev:  os.Getenv("APPLE_PUSH_TEAM_ID_DEV"),
 		ApplePushTeamIDProd: os.Getenv("APPLE_PUSH_TEAM_ID_PROD"),
+		SMTPHost:            os.Getenv("SMTP_HOST"),
+		SMTPPort:            smtpPort,
+		SMTPUsername:        os.Getenv("SMTP_USERNAME"),
+		SMTPPassword:        os.Getenv("SMTP_PASSWORD"),
+		SMTPFromEmail:       os.Getenv("SMTP_FROM_EMAIL"),
+		SMTPFromName:        os.Getenv("SMTP_FROM_NAME"),
 
 		// Cloudflare R2 — chat attachment storage (optional)
 		CloudflareR2AccountID:       os.Getenv("CF_R2_ACCOUNT_ID"),

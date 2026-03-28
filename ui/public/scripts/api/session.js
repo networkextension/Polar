@@ -5,3 +5,8 @@ export async function fetchCurrentUser() {
 export async function logout() {
     return request("/api/logout", { method: "POST" });
 }
+export async function sendEmailVerification() {
+    return requestJson("/api/email-verification/send", {
+        method: "POST",
+    });
+}

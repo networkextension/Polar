@@ -1,6 +1,6 @@
 import { blockUser, unblockUser, upsertRecommendation, updateMyProfile, fetchUserProfile, type UserProfileDetail } from "./api/profile.js";
 import { uploadUserIcon } from "./api/dashboard.js";
-import { fetchCurrentUser } from "./api/session.js";
+import { fetchCurrentUser, sendEmailVerification } from "./api/session.js";
 import { resolveAvatar } from "./lib/avatar.js";
 import { byId } from "./lib/dom.js";
 import { hydrateSiteBrand } from "./lib/site.js";
@@ -13,6 +13,8 @@ const profileBioPanel = byId<HTMLElement>("profileBioPanel");
 const profileRecommendationPanel = byId<HTMLElement>("profileRecommendationPanel");
 
 let currentUserId = "";
+let currentUserEmail = "";
+let currentUserEmailVerified = false;
 let profileUserId = "";
 
 initStoredTheme();
@@ -42,6 +44,8 @@ async function loadCurrentUser(): Promise<void> {
     return;
   }
   currentUserId = data.user_id;
+  currentUserEmail = data.email || "";
+  currentUserEmailVerified = Boolean(data.email_verified);
 }
 
 function renderProfileCard(profile: UserProfileDetail): void {
@@ -100,8 +104,20 @@ function renderProfileCard(profile: UserProfileDetail): void {
 
 function renderBioPanel(profile: UserProfileDetail): void {
   if (profile.is_me) {
+    const verificationState = currentUserEmailVerified ? t("profile.emailVerified") : t("profile.emailUnverified");
+    const verificationAction = currentUserEmailVerified
+      ? ""
+      : `<button id="profileSendVerificationBtn" class="btn-inline btn-secondary" type="button">${t("profile.sendVerificationEmail")}</button>`;
     profileBioPanel.innerHTML = `
       <div class="badge">${t("profile.bio")}</div>
+      <div class="profile-verification-card">
+        <div class="profile-meta-line"><span class="profile-meta-label">${t("profile.email")}</span><span>${escapeHtml(currentUserEmail || t("profile.emailUnavailable"))}</span></div>
+        <div class="profile-meta-line"><span class="profile-meta-label">${t("profile.emailVerificationStatus")}</span><span>${verificationState}</span></div>
+        <div id="profileEmailVerificationStatus" class="status-text"></div>
+        <div class="task-form-actions">
+          ${verificationAction}
+        </div>
+      </div>
       <form id="profileBioForm" class="task-result-form">
         <label class="form-label" for="profileBioInput">${t("profile.personalBio")}</label>
         <textarea id="profileBioInput" class="input textarea" rows="5" maxlength="500" placeholder="${t("profile.bioPlaceholder")}">${escapeHtml(profile.bio || "")}</textarea>
@@ -118,6 +134,30 @@ function renderBioPanel(profile: UserProfileDetail): void {
     const bioInput = byId<HTMLTextAreaElement>("profileBioInput");
     const iconInput = byId<HTMLInputElement>("profileIconInput");
     const status = byId<HTMLElement>("profileBioStatus");
+    const verificationStatus = byId<HTMLElement>("profileEmailVerificationStatus");
+    const verificationBtn = document.getElementById("profileSendVerificationBtn") as HTMLButtonElement | null;
+
+    verificationBtn?.addEventListener("click", async () => {
+      verificationBtn.disabled = true;
+      verificationStatus.textContent = t("profile.sendingVerificationEmail");
+      const { response, data } = await sendEmailVerification();
+      if (!response.ok) {
+        verificationStatus.textContent = data.error || t("profile.emailVerificationSendFailed");
+        verificationStatus.classList.remove("status-success");
+        verificationStatus.classList.add("status-error");
+        verificationBtn.disabled = false;
+        return;
+      }
+      const me = await fetchCurrentUser();
+      if (me.response.ok) {
+        currentUserEmail = me.data.email || currentUserEmail;
+        currentUserEmailVerified = Boolean(me.data.email_verified);
+      }
+      verificationStatus.textContent = data.message || t("profile.verificationEmailSent");
+      verificationStatus.classList.remove("status-error");
+      verificationStatus.classList.add("status-success");
+      await loadProfile();
+    });
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
