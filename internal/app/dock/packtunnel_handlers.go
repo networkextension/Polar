@@ -1,6 +1,7 @@
 package dock
 
 import (
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -30,13 +31,20 @@ type packTunnelMetadataRequest struct {
 }
 
 func (s *Server) handlePackTunnelProfileList(c *gin.Context) {
+	if err := s.ensureSystemUser(); err != nil {
+		log.Printf("packtunnel list ensure system user failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
 	items, err := s.listPackTunnelProfiles(systemUserID)
 	if err != nil {
+		log.Printf("packtunnel list profiles failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
 	}
 	active, err := s.getActivePackTunnelProfile(systemUserID)
 	if err != nil {
+		log.Printf("packtunnel get active profile failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
 	}
@@ -47,6 +55,11 @@ func (s *Server) handlePackTunnelProfileList(c *gin.Context) {
 }
 
 func (s *Server) handlePackTunnelProfileGet(c *gin.Context) {
+	if err := s.ensureSystemUser(); err != nil {
+		log.Printf("packtunnel get ensure system user failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效配置"})
@@ -54,6 +67,7 @@ func (s *Server) handlePackTunnelProfileGet(c *gin.Context) {
 	}
 	item, err := s.getPackTunnelProfile(systemUserID, id)
 	if err != nil {
+		log.Printf("packtunnel get profile failed id=%s: %v", id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
 	}
@@ -65,8 +79,14 @@ func (s *Server) handlePackTunnelProfileGet(c *gin.Context) {
 }
 
 func (s *Server) handlePackTunnelActiveProfileGet(c *gin.Context) {
+	if err := s.ensureSystemUser(); err != nil {
+		log.Printf("packtunnel active ensure system user failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
 	item, err := s.getActivePackTunnelProfile(systemUserID)
 	if err != nil {
+		log.Printf("packtunnel active get failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
 	}
@@ -78,6 +98,11 @@ func (s *Server) handlePackTunnelActiveProfileGet(c *gin.Context) {
 }
 
 func (s *Server) handlePackTunnelProfileCreate(c *gin.Context) {
+	if err := s.ensureSystemUser(); err != nil {
+		log.Printf("packtunnel create ensure system user failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
 	item, ok := buildPackTunnelProfileFromRequest(c)
 	if !ok {
 		return
@@ -85,6 +110,7 @@ func (s *Server) handlePackTunnelProfileCreate(c *gin.Context) {
 
 	created, err := s.createPackTunnelProfile(systemUserID, item, time.Now())
 	if err != nil {
+		log.Printf("packtunnel create failed name=%s type=%s: %v", item.Name, item.Type, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
 		return
 	}
@@ -92,6 +118,11 @@ func (s *Server) handlePackTunnelProfileCreate(c *gin.Context) {
 }
 
 func (s *Server) handlePackTunnelProfileUpdate(c *gin.Context) {
+	if err := s.ensureSystemUser(); err != nil {
+		log.Printf("packtunnel update ensure system user failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效配置"})
@@ -106,6 +137,7 @@ func (s *Server) handlePackTunnelProfileUpdate(c *gin.Context) {
 
 	updated, err := s.updatePackTunnelProfile(systemUserID, id, item, time.Now())
 	if err != nil {
+		log.Printf("packtunnel update failed id=%s: %v", id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
 		return
 	}
@@ -117,6 +149,11 @@ func (s *Server) handlePackTunnelProfileUpdate(c *gin.Context) {
 }
 
 func (s *Server) handlePackTunnelProfileDelete(c *gin.Context) {
+	if err := s.ensureSystemUser(); err != nil {
+		log.Printf("packtunnel delete ensure system user failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效配置"})
@@ -124,6 +161,7 @@ func (s *Server) handlePackTunnelProfileDelete(c *gin.Context) {
 	}
 	ok, err := s.deletePackTunnelProfile(systemUserID, id)
 	if err != nil {
+		log.Printf("packtunnel delete failed id=%s: %v", id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
 		return
 	}
@@ -135,6 +173,11 @@ func (s *Server) handlePackTunnelProfileDelete(c *gin.Context) {
 }
 
 func (s *Server) handlePackTunnelProfileActivate(c *gin.Context) {
+	if err := s.ensureSystemUser(); err != nil {
+		log.Printf("packtunnel activate ensure system user failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效配置"})
@@ -143,6 +186,7 @@ func (s *Server) handlePackTunnelProfileActivate(c *gin.Context) {
 
 	item, err := s.setActivePackTunnelProfile(systemUserID, id, time.Now())
 	if err != nil {
+		log.Printf("packtunnel activate failed id=%s: %v", id, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "启用失败"})
 		return
 	}

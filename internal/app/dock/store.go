@@ -1516,18 +1516,18 @@ func scanPackTunnelProfile(scan func(dest ...any) error) (*PackTunnelProfile, er
 		return nil, err
 	}
 
-	if err := json.Unmarshal(serverJSON, &item.Server); err != nil {
+	if err := decodePackTunnelJSON(serverJSON, &item.Server); err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(authJSON, &item.Auth); err != nil {
+	if err := decodePackTunnelJSON(authJSON, &item.Auth); err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal(optionsJSON, &item.Options); err != nil {
+	if err := decodePackTunnelJSON(optionsJSON, &item.Options); err != nil {
 		return nil, err
 	}
 	if len(transportJSON) > 0 && string(transportJSON) != "null" {
 		var transport PackTunnelTransport
-		if err := json.Unmarshal(transportJSON, &transport); err != nil {
+		if err := decodePackTunnelJSON(transportJSON, &transport); err != nil {
 			return nil, err
 		}
 		item.Transport = &transport
@@ -1536,27 +1536,37 @@ func scanPackTunnelProfile(scan func(dest ...any) error) (*PackTunnelProfile, er
 	return &item, nil
 }
 
-func marshalPackTunnelProfile(item PackTunnelProfile) ([]byte, []byte, []byte, []byte, error) {
+func marshalPackTunnelProfile(item PackTunnelProfile) (string, string, string, any, error) {
 	serverJSON, err := json.Marshal(item.Server)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", "", "", nil, err
 	}
 	authJSON, err := json.Marshal(item.Auth)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", "", "", nil, err
 	}
 	optionsJSON, err := json.Marshal(item.Options)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return "", "", "", nil, err
 	}
-	var transportJSON []byte
+	var transportJSON any
 	if item.Transport != nil {
-		transportJSON, err = json.Marshal(item.Transport)
-		if err != nil {
-			return nil, nil, nil, nil, err
+		raw, marshalErr := json.Marshal(item.Transport)
+		if marshalErr != nil {
+			return "", "", "", nil, marshalErr
 		}
+		transportJSON = string(raw)
+	} else {
+		transportJSON = nil
 	}
-	return serverJSON, authJSON, optionsJSON, transportJSON, nil
+	return string(serverJSON), string(authJSON), string(optionsJSON), transportJSON, nil
+}
+
+func decodePackTunnelJSON(raw []byte, dest any) error {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	return json.Unmarshal(raw, dest)
 }
 
 func (s *Server) listBotUsers(ownerUserID string) ([]BotUser, error) {

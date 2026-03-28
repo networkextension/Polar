@@ -1,6 +1,7 @@
 package dock
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +19,11 @@ func (s *Server) packTunnelRulesDir() string {
 }
 
 func (s *Server) handlePackTunnelRuleUpload(c *gin.Context) {
+	if err := s.ensureSystemUser(); err != nil {
+		log.Printf("packtunnel rules upload ensure system user failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
 	if s.uploadDir == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "上传目录未配置"})
 		return
@@ -48,6 +54,7 @@ func (s *Server) handlePackTunnelRuleUpload(c *gin.Context) {
 
 	existing, err := s.getPackTunnelRuleFile(systemUserID)
 	if err != nil {
+		log.Printf("packtunnel rules get existing failed: %v", err)
 		_ = os.Remove(dstPath)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
@@ -68,6 +75,7 @@ func (s *Server) handlePackTunnelRuleUpload(c *gin.Context) {
 		UploadedAt:  now,
 	}
 	if err := s.upsertPackTunnelRuleFile(item); err != nil {
+		log.Printf("packtunnel rules upsert failed filename=%s: %v", file.Filename, err)
 		_ = os.Remove(dstPath)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
 		return
@@ -84,8 +92,14 @@ func (s *Server) handlePackTunnelRuleUpload(c *gin.Context) {
 }
 
 func (s *Server) handlePackTunnelRuleDownload(c *gin.Context) {
+	if err := s.ensureSystemUser(); err != nil {
+		log.Printf("packtunnel rules download ensure system user failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
 	item, err := s.getPackTunnelRuleFile(systemUserID)
 	if err != nil {
+		log.Printf("packtunnel rules download lookup failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
 	}
@@ -105,8 +119,14 @@ func (s *Server) handlePackTunnelRuleDownload(c *gin.Context) {
 }
 
 func (s *Server) handlePackTunnelRuleDelete(c *gin.Context) {
+	if err := s.ensureSystemUser(); err != nil {
+		log.Printf("packtunnel rules delete ensure system user failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
+		return
+	}
 	item, err := s.getPackTunnelRuleFile(systemUserID)
 	if err != nil {
+		log.Printf("packtunnel rules delete lookup failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "服务器错误"})
 		return
 	}
@@ -120,6 +140,7 @@ func (s *Server) handlePackTunnelRuleDelete(c *gin.Context) {
 	}
 	ok, err := s.deletePackTunnelRuleFile(systemUserID)
 	if err != nil {
+		log.Printf("packtunnel rules delete failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
 		return
 	}
