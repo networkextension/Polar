@@ -1,0 +1,31 @@
+[Unit]
+Description=Polar {{SVC}} plugin svc
+Documentation=https://github.com/networkextension/polar-{{SVC}}
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=polar
+Group=polar
+
+# Edit this file in place (or override via systemctl edit) to set
+# POLAR_DOCK_URL, POLAR_PLUGIN_TOKEN, POLAR_{{SVC}}_DB_DSN, etc.
+# An EnvironmentFile keeps the secrets out of the unit file.
+EnvironmentFile=/etc/polar/{{SVC}}-svc.env
+
+ExecStart=/usr/local/bin/{{SVC}}-svc
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/polar/{{SVC}}-svc.log
+StandardError=append:/var/log/polar/{{SVC}}-svc.log
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/log/polar /var/lib/polar
+
+[Install]
+WantedBy=multi-user.target

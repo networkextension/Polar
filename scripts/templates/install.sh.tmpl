@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# Install polar-{{SVC}}-svc on the current host.
+#
+# Detects OS and copies binary + service file + nginx snippet into the
+# conventional paths. Idempotent — safe to re-run for upgrades.
+#
+# Run as root (or via sudo).
+#
+# Pre-reqs (NOT installed by this script):
+#   - User `polar` exists (linux/freebsd) — `useradd polar` or `pw useradd polar`.
+#   - Postgres reachable; database polar_{{SVC}} created with the user that env
+#     POLAR_{{SVC}}_DB_DSN references.
+#   - polar-dock running and accessible from this host.
+#   - plugin_modules row minted on dock for this plugin
+#     (name = '{{SVC}}', plugin_key_hash = sha256(token); see
+#     https://github.com/networkextension/Polar/blob/main/doc/deploy.md).
+
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "install.sh: must run as root (try: sudo $0)" >&2
+    exit 1
+fi
+
+BUNDLE="$(cd "$(dirname "$0")" && pwd)"
+UNAME_S="$(uname -s)"
+SVC={{SVC}}
+VER={{VERSION}}
+
+echo "[install.sh] polar-${SVC}-svc ${VER} on ${UNAME_S}"
+
+case "$UNAME_S" in
+    Darwin)
+        BIN=/usr/local/bin
+        ETC=/usr/local/etc/polar
+        NGX=/usr/local/etc/nginx/snippets
+        LOG=/var/log/polar
+        SCH="$BUNDLE/migrations/${SVC}-schema.sql"
+        install -d "$BIN" "$ETC" "$NGX" "$LOG"
+        install -m 0755 "$BUNDLE/bin/${SVC}-svc"                              "$BIN/${SVC}-svc"
+        install -m 0644 "$BUNDLE/etc/launchd/polar.${SVC}-svc.plist"           ~/Library/LaunchAgents/ 2>/dev/null || true
+        if [ -f "$BUNDLE/etc/launchd/polar-${SVC}-svc-launch.sh" ]; then
+            install -m 0755 "$BUNDLE/etc/launchd/polar-${SVC}-svc-launch.sh" "$BIN/polar-${SVC}-svc-launch.sh"
+        fi
+        if [ -f "$BUNDLE/etc/nginx/${SVC}-svc-snippet.conf" ]; then
+            install -m 0644 "$BUNDLE/etc/nginx/${SVC}-svc-snippet.conf"      "$NGX/${SVC}-svc.conf"
+        fi
+        if [ -f "$BUNDLE/env/${SVC}-svc.env.sample" ] && [ ! -f "$ETC/${SVC}-svc.env" ]; then
+            install -m 0600 "$BUNDLE/env/${SVC}-svc.env.sample" "$ETC/${SVC}-svc.env"
+            echo "[install.sh] wrote $ETC/${SVC}-svc.env from .sample — EDIT IT to set POLAR_PLUGIN_TOKEN etc."
+        fi
+        echo "[install.sh] launchctl load -w ~/Library/LaunchAgents/polar.${SVC}-svc.plist  (run as the target user)"
+        ;;
+
+    Linux)
+        BIN=/usr/local/bin
+        ETC=/etc/polar
+        NGX=/etc/nginx/snippets
+        LOG=/var/log/polar
+        VAR=/var/lib/polar
+        UNIT=/etc/systemd/system
+        install -d "$BIN" "$ETC" "$NGX" "$LOG" "$VAR" "$UNIT"
+        install -m 0755 "$BUNDLE/bin/${SVC}-svc"                              "$BIN/${SVC}-svc"
+        install -m 0644 "$BUNDLE/etc/systemd/polar-${SVC}-svc.service"        "$UNIT/polar-${SVC}-svc.service"
+        if [ -f "$BUNDLE/etc/nginx/${SVC}-svc-snippet.conf" ]; then
+            install -m 0644 "$BUNDLE/etc/nginx/${SVC}-svc-snippet.conf"      "$NGX/${SVC}-svc.conf"
+        fi
+        if [ -f "$BUNDLE/env/${SVC}-svc.env.sample" ] && [ ! -f "$ETC/${SVC}-svc.env" ]; then
+            install -m 0600 "$BUNDLE/env/${SVC}-svc.env.sample" "$ETC/${SVC}-svc.env"
+            echo "[install.sh] wrote $ETC/${SVC}-svc.env from .sample — EDIT IT first"
+        fi
+        chown -R polar:polar "$ETC" "$LOG" "$VAR" 2>/dev/null || \
+            echo "[install.sh] warn: user 'polar' missing; create with: useradd --system -d $VAR polar"
+        systemctl daemon-reload
+        echo "[install.sh] systemctl enable --now polar-${SVC}-svc"
+        ;;
+
+    FreeBSD)
+        BIN=/usr/local/bin
+        ETC=/usr/local/etc/polar
+        NGX=/usr/local/etc/nginx/snippets
+        LOG=/var/log/polar
+        RC=/usr/local/etc/rc.d
+        install -d "$BIN" "$ETC" "$NGX" "$LOG"
+        install -m 0755 "$BUNDLE/bin/${SVC}-svc"                              "$BIN/${SVC}-svc"
+        install -m 0755 "$BUNDLE/etc/rc.d/polar_${SVC}_svc"                   "$RC/polar_${SVC}_svc"
+        if [ -f "$BUNDLE/etc/nginx/${SVC}-svc-snippet.conf" ]; then
+            install -m 0644 "$BUNDLE/etc/nginx/${SVC}-svc-snippet.conf"      "$NGX/${SVC}-svc.conf"
+        fi
+        if [ -f "$BUNDLE/env/${SVC}-svc.env.sample" ] && [ ! -f "$ETC/${SVC}-svc.env" ]; then
+            install -m 0600 "$BUNDLE/env/${SVC}-svc.env.sample" "$ETC/${SVC}-svc.env"
+            echo "[install.sh] wrote $ETC/${SVC}-svc.env from .sample — EDIT IT first"
+        fi
+        chown -R polar:polar "$ETC" "$LOG" 2>/dev/null || \
+            echo "[install.sh] warn: user 'polar' missing; create with: pw useradd polar -d /var/lib/polar"
+        sysrc polar_${SVC}_svc_enable=YES >/dev/null
+        echo "[install.sh] service polar_${SVC}_svc start"
+        ;;
+
+    *)
+        echo "install.sh: unsupported OS ${UNAME_S}" >&2
+        exit 1
+        ;;
+esac
+
+echo "[install.sh] done. Next:"
+echo "  1. Edit the env file above (POLAR_PLUGIN_TOKEN must match the plugin_modules row on dock)."
+echo "  2. Apply the schema migration: psql -d polar_${SVC} -f $BUNDLE/migrations/${SVC}-schema.sql"
+echo "  3. Include the nginx snippet from the dock vhost and reload nginx."
+echo "  4. Start the service per the line above."
