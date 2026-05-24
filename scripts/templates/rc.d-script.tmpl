@@ -1,0 +1,32 @@
+#!/bin/sh
+#
+# Polar {{SVC}} plugin svc — FreeBSD rc.d script.
+#
+# PROVIDE: polar_{{SVC}}_svc
+# REQUIRE: NETWORKING
+# KEYWORD: shutdown
+#
+# Enable in /etc/rc.conf:
+#   polar_{{SVC}}_svc_enable="YES"
+#   polar_{{SVC}}_svc_envfile="/usr/local/etc/polar/{{SVC}}-svc.env"
+
+. /etc/rc.subr
+
+name=polar_{{SVC}}_svc
+rcvar=polar_{{SVC}}_svc_enable
+
+load_rc_config $name
+: ${polar_{{SVC}}_svc_enable:=NO}
+: ${polar_{{SVC}}_svc_user:=polar}
+: ${polar_{{SVC}}_svc_envfile:=/usr/local/etc/polar/{{SVC}}-svc.env}
+
+command="/usr/sbin/daemon"
+procname="/usr/local/bin/{{SVC}}-svc"
+pidfile="/var/run/polar_{{SVC}}_svc.pid"
+logfile="/var/log/polar/{{SVC}}-svc.log"
+
+# `daemon` runs the binary in the background and supervises PID + logs.
+# The -r flag restarts on exit; matches launchd/systemd KeepAlive shape.
+command_args="-f -p ${pidfile} -o ${logfile} -r -- /bin/sh -c '. ${polar_{{SVC}}_svc_envfile} && exec ${procname}'"
+
+run_rc_command "$1"
