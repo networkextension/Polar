@@ -14,6 +14,7 @@ This repository is the **project front door**. The control-plane host (`polar-do
 |---|---|---|
 | [`polar-sdk`](https://github.com/networkextension/polar-sdk) | open | Go SDK every plugin links — HMAC plugin-token auth, dock `/internal/v1/*` client, heartbeat helpers. Stdlib-only. |
 | [`polar-ui-common`](https://github.com/networkextension/polar-ui-common) | open | Shared frontend helpers (sidebar / theme / i18n / auth session) + global stylesheet + branding assets, published to GitHub Packages as `@networkextension/polar-ui-common`. |
+| [`polar-dock-ui`](https://github.com/networkextension/polar-dock-ui) | _pending_ | The dock's web app — HTML pages + TypeScript bundles served in front of `polar-dock`. Built with esbuild → `dist/`, CI on every push. Opens alongside `polar-dock`. |
 | [`polar-agent`](https://github.com/networkextension/polar-agent) | open | Local executor — long-lived WS to dock, runs bot tool-calls (shell, MCP, iOS sign, …) in a configured workdir. Ships `polar-agent` + `polar-agent-test` binaries; cross-platform. |
 
 ### Plugins (each = standalone service + UI)
