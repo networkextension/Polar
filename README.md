@@ -101,3 +101,12 @@ Per-module — check each repo's LICENSE file. Plugins generally ship under perm
 Each module versions itself in its own repo. Watch the modules you care about; this front door doesn't try to be a meta-changelog. When `polar-dock` lands, this README gets a "🟢 open" badge on that row and a `getting-started` doc with the full stack composition.
 
 请耐心等待 dock 开源。
+
+---
+
+## Activity
+
+<!-- BEGIN:status -->
+<!-- table will be populated by the refresh-repo-status workflow on its next run -->
+<!-- END:status -->
+
