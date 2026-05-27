@@ -42,6 +42,7 @@ This repository is the **project front door**. The control-plane host (`polar-do
 | Module | Status | What it does |
 |---|---|---|
 | [`ShangDynasty`](https://github.com/networkextension/ShangDynasty) | _developing_ | iOS / macOS client app. |
+| [`polar-wg-app`](https://github.com/networkextension/polar-wg-app) | _developing_ | Polar's cross-platform WireGuard client. |
 | [`Athens`](https://github.com/networkextension/Athens) | _developing_ | Android client app. |
 
 ---
