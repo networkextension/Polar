@@ -37,6 +37,13 @@ This repository is the **project front door**. The control-plane host (`polar-do
 |---|---|---|
 | [`polar-dock`](https://github.com/networkextension/polar-dock) | _pending_ | Identity + LLM proxy + chat + agent_hub + the host vhost that fans out to every plugin. The "core" — open release coming once the surface has settled. **耐心等待 / patient.** |
 
+### Clients
+
+| Module | Status | What it does |
+|---|---|---|
+| [`ShangDynasty`](https://github.com/networkextension/ShangDynasty) | _developing_ | iOS / macOS client app. |
+| [`Athens`](https://github.com/networkextension/Athens) | _developing_ | Android client app. |
+
 ---
 
 ## How modules talk to each other
