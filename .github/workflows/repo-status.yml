@@ -1,0 +1,52 @@
+name: refresh-repo-status
+
+# Refreshes the Activity table at the bottom of README.md once an hour
+# (and on demand). Reads cross-repo metadata for every module linked from
+# README.md.
+#
+# Permissions:
+#   - contents: write — to commit the refreshed README back to main.
+#   - Cross-repo PR/commit reads use POLAR_STATUS_TOKEN if set (a fine-
+#     grained PAT with `metadata:read` + `pull_requests:read` across the
+#     networkextension org, including private repos). Falls back to the
+#     default GITHUB_TOKEN, which only sees public repos.
+
+on:
+  schedule:
+    - cron: "17 * * * *"  # every hour at :17 to dodge the noisy top-of-hour
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "scripts/update-repo-status.sh"
+      - ".github/workflows/repo-status.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repo-status
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refresh status table
+        env:
+          GH_TOKEN: ${{ secrets.POLAR_STATUS_TOKEN || secrets.GITHUB_TOKEN }}
+        run: bash scripts/update-repo-status.sh
+
+      - name: Commit if changed
+        run: |
+          if git diff --quiet README.md; then
+            echo "no changes"
+            exit 0
+          fi
+          git config user.name  "polar-status-bot"
+          git config user.email "polar-status-bot@users.noreply.github.com"
+          git add README.md
+          git commit -m "chore(status): refresh activity table [skip ci]"
+          git push
