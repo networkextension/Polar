@@ -2,69 +2,101 @@
 
 A cloud built on Apple Silicon — and on everything that behaves like it. Genuine hardware, Hackintosh rigs, scavenged silicon from wherever the market shakes loose: if it runs, it joins the fleet. The hardware is substrate. The control plane is the project. Built AI-native, end to end.
 
-This repository is the **project front door**. The control-plane host (`polar-dock`) and a few plugins are still being prepared for open release — see the **Status** column below. Everything currently open lives in its own repo under [`@networkextension`](https://github.com/networkextension).
+This repository is the **project front door**. Polar is a control plane (`polar-dock`) plus a fleet of independent plugins — each its own repo, its own Postgres, its own Go binary, its own subdomain. Many are open; the core and the commercial verticals are still private. The **Status** column says which is which; everything open lives under [`@networkextension`](https://github.com/networkextension).
 
 ---
 
 ## Modules
 
+Status: **open** = public repo you can clone today · **private** = source not yet public (binaries run in production).
+
 ### Foundation
 
 | Module | Status | What it does |
 |---|---|---|
-| [`polar-sdk`](https://github.com/networkextension/polar-sdk) | open | Go SDK every plugin links — HMAC plugin-token auth, dock `/internal/v1/*` client, heartbeat helpers. Stdlib-only. |
-| [`polar-ui-common`](https://github.com/networkextension/polar-ui-common) | open | Shared frontend helpers (sidebar / theme / i18n / auth session) + global stylesheet + branding assets, published to GitHub Packages as `@networkextension/polar-ui-common`. |
-| [`polar-dock-ui`](https://github.com/networkextension/polar-dock-ui) | _pending_ | The dock's web app — HTML pages + TypeScript bundles served in front of `polar-dock`. Built with esbuild → `dist/`, CI on every push. Opens alongside `polar-dock`. |
-| [`polar-agent`](https://github.com/networkextension/polar-agent) | open | Local executor — long-lived WS to dock, runs bot tool-calls (shell, MCP, iOS sign, …) in a configured workdir. Ships `polar-agent` + `polar-agent-test` binaries; cross-platform. |
+| [`polar-sdk`](https://github.com/networkextension/polar-sdk) | open | Go SDK every plugin links — HMAC plugin-token auth, dock `/internal/v1/*` client, heartbeat + platform-nav + assets helpers. Stdlib-only. |
+| [`polar-ui-common`](https://github.com/networkextension/polar-ui-common) | open | Shared frontend helpers (sidebar / platform-nav / theme / i18n / auth session) + global stylesheet + branding, published to GitHub Packages as `@networkextension/polar-ui-common`. |
+| [`polar-agent`](https://github.com/networkextension/polar-agent) | open | Local executor — long-lived WS to dock, runs bot tool-calls (shell, MCP, iOS sign, WireGuard, VNC, …) in a configured workdir. Reports host-info on hello. Ships `polar-agent` + `polar-agent-test`; cross-platform. |
+| [`polar-dock-ui`](https://github.com/networkextension/polar-dock-ui) | private | The dock's web app — HTML pages + TypeScript bundles served in front of `polar-dock`. esbuild → `dist/`, CI on every push. |
+| [`polar-dock`](https://github.com/networkextension/polar-dock) | private · **core** | Identity + workspaces/RBAC + LLM proxy + chat/rooms + agent hub + assets router + the host vhost that fans every plugin out under one origin. Open release comes once the surface settles. **耐心等待 / patient.** |
 
-### Plugins (each = standalone service + UI)
+### Data plane
 
 | Module | Status | What it does |
 |---|---|---|
-| [`polar-wg`](https://github.com/networkextension/polar-wg) | open | WireGuard mesh control plane — multi-hub, role-aware allocator, MagicDNS-style name resolution, Headscale compat path. |
+| [`polar-assets`](https://github.com/networkextension/polar-assets) | open | Edge-cache asset store — signed PUT/GET blobs, warm-pull across provider nodes, LRU eviction. Every media-handling plugin (video, expense, library, music…) writes its bytes here instead of local disk. |
+| [`polar-release`](https://github.com/networkextension/polar-release) | private | Signed, content-addressed module release registry on the assets data plane — ed25519-signed manifests powering OTA module self-update + the module marketplace. |
+
+### Plugins — horizontal (each = standalone Go service + its own UI)
+
+| Module | Status | What it does |
+|---|---|---|
+| [`polar-wg`](https://github.com/networkextension/polar-wg) | open | WireGuard mesh control plane — multi-hub, role-aware allocator, MagicDNS-style name resolution, Headscale compat path, hub-status pipeline. |
+| [`polar-hosts`](https://github.com/networkextension/polar-hosts) | open | Host inventory + 3-tier host-info + per-host skill registry (Shell, VNC, MCP) bridged over WS through the dock agent hub. |
 | [`polar-projects`](https://github.com/networkextension/polar-projects) | open | Lightweight project / feature / task workspace with AI requirement decomposition + plan generation. |
-| [`polar-hosts`](https://github.com/networkextension/polar-hosts) | open | Host inventory + per-host skill registry (Shell, VNC, MCP) with WS bridge through the dock agent hub. |
 | [`polar-library`](https://github.com/networkextension/polar-library) | open | Reverse-engineering knowledge base — devices / firmwares / functions with blob upload, lookup-by-symbol/address/signature. |
 | [`polar-video`](https://github.com/networkextension/polar-video) | open | Video studio — Seedance + FFmpeg pipeline for projects / shots / assets. |
 | [`polar-expense`](https://github.com/networkextension/polar-expense) | open | Household / team expense tracking with vision-LLM receipt extraction. |
 | [`polar-latch`](https://github.com/networkextension/polar-latch) | open | Latch — proxy + traffic rules + service-node + agent-runtime profiles, with a connector toolchain. |
-| [`polar-packtunnel`](https://github.com/networkextension/polar-packtunnel) | _pending_ | Proxy / VPN profile management plugin — opening soon. |
-| [`polar-iosdist`](https://github.com/networkextension/polar-iosdist) | _pending_ | iOS distribution + signing (App Store Connect sync, zsign, plaza). Pending license review. |
+| [`polar-music`](https://github.com/networkextension/polar-music) | open | Workspace-scoped private music library (audio bytes in `polar-assets`), Apple-Music-style UI. |
+| [`polar-dns`](https://github.com/networkextension/polar-dns) | open | DNS records management plugin. |
+| [`polar-packtunnel`](https://github.com/networkextension/polar-packtunnel) | private | Proxy / VPN profile management — opening later. |
+| [`polar-iosdist`](https://github.com/networkextension/polar-iosdist) | private | iOS distribution + signing (App Store Connect sync, zsign, plaza). Pending license review. |
 
-### Control plane
+### Verticals (industry solutions built on the platform base)
 
-| Module | Status | What it does |
-|---|---|---|
-| [`polar-dock`](https://github.com/networkextension/polar-dock) | _pending_ | Identity + LLM proxy + chat + agent_hub + the host vhost that fans out to every plugin. The "core" — open release coming once the surface has settled. **耐心等待 / patient.** |
-
-### Clients
+The same identity + LLM-proxy + assets + dataflow base, specialized per industry. Mostly private while they're commercialized.
 
 | Module | Status | What it does |
 |---|---|---|
-| [`ShangDynasty`](https://github.com/networkextension/ShangDynasty) | _developing_ | iOS / macOS client app. |
-| [`polar-wg-app`](https://github.com/networkextension/polar-wg-app) | _developing_ | Polar's cross-platform WireGuard client. |
-| [`Athens`](https://github.com/networkextension/Athens) | _developing_ | Android client app. |
+| [`polar-buildings`](https://github.com/networkextension/polar-buildings) | private | 楼宇 — facility / building management: sites · floors · zones · devices · work orders · inspections, AI alarm→work-order dispatch, BMS telemetry time-series. |
+| [`polar-lawyer`](https://github.com/networkextension/polar-lawyer) | private | 律所 — legal / contract / compliance RAG: statute library + case library, document upload/OCR/statute-import, AI drafting. |
+| [`polar-screen`](https://github.com/networkextension/polar-screen) | private | DOOH ad network + "screen mining" — device-first provisioning, owner-sovereign content timeline + hard veto, signed proof-of-play earnings ledger, AI order desk, CPA attribution. |
+| [`polar-film`](https://github.com/networkextension/polar-film) | private | 电影元数据 — film metadata. |
+| [`polar-stock`](https://github.com/networkextension/polar-stock) | private | Stock / market data plugin. |
+
+### Platform libraries
+
+| Module | Status | What it does |
+|---|---|---|
+| [`polar-dataflow`](https://github.com/networkextension/polar-dataflow) | private | Reusable 5-stage ingest pipeline + per-vertical pgvector RAG — the retrieval substrate the verticals (lawyer, …) build on. |
+
+### SDKs & clients
+
+| Module | Status | What it does |
+|---|---|---|
+| [`polar-sdk`](https://github.com/networkextension/polar-sdk) | open | Go plugin SDK (see Foundation). |
+| [`polar-sdk-swift`](https://github.com/networkextension/polar-sdk-swift) | private | Cross-platform Swift SDK (API/UI split, transport-injected, Apple + Linux/NIO) + a `polar` CLI. |
+| [`ShangDynasty`](https://github.com/networkextension/ShangDynasty) | private | iOS / macOS client app. |
+| [`polar-wg-app`](https://github.com/networkextension/polar-wg-app) | private | Polar's cross-platform WireGuard client — C protocol core (ex-FreeBSD), macOS/iOS NetworkExtension, Android, + a CLI reference client. |
+| [`Athens`](https://github.com/networkextension/Athens) | private | Android client app. |
 
 ---
 
 ## How modules talk to each other
 
 ```
-            ┌─────────────────────────────────────────────────────┐
-            │                  zen.4950.store                     │
-            │             nginx + polar-dock (control plane)      │
-            └───────────────────────┬─────────────────────────────┘
-                                    │ /internal/v1/*  (HMAC-signed)
-            ┌───────────────────────┴─────────────────────────────┐
-            │                                                     │
-   ┌────────▼─────────┐  ┌──────────────────┐  ┌─────────────────▼┐
-   │   polar-wg       │  │  polar-projects  │  │  polar-expense   │
-   │   :8090          │  │  :8096           │  │  :8097           │
-   └──────────────────┘  └──────────────────┘  └──────────────────┘
-              (… 6 more plugin services, one per module …)
+                      ┌──────────────────────────────────────────────┐
+   browser / app ───▶ │  nginx · *.4950.store wildcard TLS            │
+                      └───────────────┬──────────────────────────────┘
+                                      │
+                      ┌───────────────▼──────────────────────────────┐
+                      │  polar-dock  (control plane / core)          │
+                      │  identity · workspaces/RBAC · LLM proxy ·    │
+                      │  chat+rooms · agent hub · assets router      │
+                      └───────────────┬──────────────────────────────┘
+                                      │  /internal/v1/*  (HMAC-signed plugin tokens)
+        ┌───────────────┬─────────────┼─────────────┬───────────────┐
+        ▼               ▼             ▼             ▼               ▼
+  ┌───────────┐  ┌───────────┐  ┌──────────┐  ┌──────────┐   ┌──────────────┐
+  │ polar-wg  │  │ polar-hosts│  │  …video  │  │ verticals│   │  data plane  │
+  │ wg.4950…  │  │ host.4950… │  │ expense… │  │ lawyer…  │   │ assets·release│
+  └───────────┘  └───────────┘  └──────────┘  └──────────┘   └──────────────┘
+        ▲                                                            ▲
+        └──────────  polar-agent  (per host: shell/VNC/MCP/wg) ──────┘
 ```
 
-Every plugin gets a subdomain — `wg.4950.store`, `project.4950.store`, `expense.4950.store`, … — sharing a wildcard `*.4950.store` cert. Plugin UIs ship from their own repos via `@networkextension/polar-ui-common`. APIs route through the dock for identity and LLM proxy; everything else is per-plugin Postgres + a per-plugin Go binary.
+Every plugin gets a subdomain — `wg.4950.store`, `host.4950.store`, `expense.4950.store`, `lawyer.4950.store`, … — sharing a wildcard `*.4950.store` cert. Plugin UIs ship from their own repos and mount the shared platform nav via `@networkextension/polar-ui-common`. APIs route through the dock for identity + LLM proxy; media bytes go to `polar-assets`; everything else is a per-plugin Postgres + a per-plugin Go binary. New hosts join the fleet by running `polar-agent`.
 
 ## Install the SDK
 
@@ -72,7 +104,7 @@ Every plugin gets a subdomain — `wg.4950.store`, `project.4950.store`, `expens
 go get github.com/networkextension/polar-sdk@latest
 ```
 
-Build a plugin against it — every open module above is a working example, but `polar-wg` is the canonical "happy path" reference.
+Build a plugin against it — every open module above is a working example; `polar-wg` is the canonical "happy path" reference.
 
 ## Install the shared UI lib
 
@@ -91,15 +123,16 @@ npm install @networkextension/polar-ui-common
 ```ts
 import { byId } from "@networkextension/polar-ui-common/lib/dom";
 import { logout, fetchCurrentUser } from "@networkextension/polar-ui-common/api/session";
+import { mountPlatformNav } from "@networkextension/polar-ui-common/lib/sidebar";
 ```
 
 ## License
 
-Per-module — check each repo's LICENSE file. Plugins generally ship under permissive terms; pending modules will publish their license at open-release time.
+Per-module — check each repo's LICENSE file. Open plugins generally ship under permissive terms; private modules will publish their license at open-release time.
 
 ## Status & releases
 
-Each module versions itself in its own repo. Watch the modules you care about; this front door doesn't try to be a meta-changelog. When `polar-dock` lands, this README gets a "🟢 open" badge on that row and a `getting-started` doc with the full stack composition.
+Each module versions itself in its own repo. Watch the ones you care about; this front door isn't a meta-changelog. When `polar-dock` opens, this README gets a 🟢 on that row and a `getting-started` doc with the full stack composition.
 
 请耐心等待 dock 开源。
 
@@ -133,4 +166,3 @@ _Last refreshed: 2026-06-09 21:08 UTC_
 | [`Athens`](https://github.com/networkextension/Athens) | _private — see repo_ | — |
 
 <!-- END:status -->
-
